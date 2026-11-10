@@ -72,7 +72,9 @@ y se lee en el HUD (`hud.js`) o en la escena (`scene.js`). Lo que no es del jueg
 - Una espera sobre un juego en pausa no llega nunca. La condición y lo que depende de ella van en el mismo instante.
 
 **Entrega.** `npm run build` deja el juego en `dist/`, con rutas relativas: se sirve desde cualquier
-carpeta. Las capturas quedan en `shots/`. Todavía no hay publicación ni repositorio git.
+carpeta. Las capturas quedan en `shots/`. El repositorio está en GitHub (`origin`). `.github/workflows/deploy.yml`
+publica `dist/` en GitHub Pages con cada push a `main`, después de correr `npm test`; la corrida del
+navegador (`npm run shots`) no corre ahí: se corre a mano antes de subir.
 
 **Decidido.**
 - three.js y no Flutter: Flutter no tiene un 3D maduro para sombras, materiales y cámara; el prototipo ya era web.
