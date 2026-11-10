@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#111923" />
+<title>Burger Belt — Prototipo de automatización</title>
+<style>
+:root{--bg:#0c1219;--panel:#17212c;--panel2:#1b2935;--line:#31424f;--text:#f1f5f7;--muted:#9aaebe;--accent:#ffb04d;--green:#6ce0ae;--red:#ff7777;--blue:#81b8fa;--purple:#bea2ff;--cell:47px}
+*{box-sizing:border-box} body{margin:0;background:radial-gradient(ellipse at 20% 0,#192838 0%,#0c1219 55%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:14px} button,select{font:inherit} button{cursor:pointer} button:focus-visible,select:focus-visible,.tile:focus-visible{outline:2px solid #ffce7b;outline-offset:2px}
+.shell{max-width:1510px;margin:0 auto;padding:23px 25px 36px}.top{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:21px}.identity{display:flex;align-items:center;gap:14px}.logo{display:grid;place-items:center;width:52px;height:52px;border-radius:15px;background:linear-gradient(145deg,#f9b950,#e57a31);font-size:28px;box-shadow:0 12px 28px #ed9b4220}.eyebrow{text-transform:uppercase;letter-spacing:.15em;font-size:10px;font-weight:800;color:var(--accent)}h1{margin:2px 0 0;font-size:26px;letter-spacing:-.05em}h1 small{color:var(--muted);font-size:12px;letter-spacing:0;font-weight:500;margin-left:8px}.topactions,.controlbar,.toolbar,.group{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.btn{border:1px solid #405261;background:#21313e;color:var(--text);border-radius:10px;padding:10px 13px;font-weight:700;transition:background .12s,border-color .12s;white-space:nowrap}.btn:hover{background:#2d4151;border-color:#6f8698}.btn.primary{background:var(--accent);color:#292011;border-color:#f8c174}.btn.primary:hover{background:#ffd08a}.btn.ghost{background:transparent}.btn.red{color:#ff9e9e}.btn.small{font-size:12px;padding:7px 10px;border-radius:8px}.btn.active{border-color:#eab466;background:#463a2a;color:#ffe1ac}.separator{width:1px;height:28px;background:#3a4d5b;margin:0 3px}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:15px}.stat{background:linear-gradient(145deg,#1b2a37,#17222d);border:1px solid #2e4050;border-radius:13px;padding:14px 16px}.stat span{font-size:11px;text-transform:uppercase;font-weight:800;letter-spacing:.08em;color:var(--muted)}.stat b{font-size:24px;display:block;margin-top:4px;letter-spacing:-.05em;font-variant-numeric:tabular-nums}.stat b.good{color:var(--green)}.stat b.warn{color:var(--accent)}
+.workspace{display:grid;grid-template-columns:minmax(0,1fr) 324px;gap:15px;align-items:start}.main{min-width:0}.panel{background:#15212b;border:1px solid #2d404f;border-radius:14px;overflow:hidden}.panelHeader{padding:17px 17px 13px;display:flex;align-items:center;justify-content:space-between;gap:9px}.panelTitle{font-weight:850;font-size:14px;letter-spacing:-.01em}.subtle{color:var(--muted);font-size:12px}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid #455969;background:#233442;padding:5px 9px;border-radius:999px;color:#dbe6ef;font-size:11px;font-weight:800}.dot{width:7px;height:7px;background:var(--green);border-radius:50%;box-shadow:0 0 0 3px #6ce0ae1b}.dot.paused{background:var(--accent);box-shadow:none}
+.toolbar{padding:0 14px 14px;gap:6px}.tool{border:1px solid #364a59;border-radius:9px;background:#1e303e;padding:8px 10px;color:#c7d5df;min-height:39px;font-size:12px;font-weight:750;display:flex;align-items:center;gap:7px}.tool:hover{background:#284253}.tool.active{border-color:#ffc275;color:#ffe6b7;background:#483a29;box-shadow:inset 0 0 0 1px #ffb04d22}.tool .emoji{font-size:17px}.directionbox{display:flex;align-items:center;gap:7px;background:#0f1b25;border:1px solid #344653;border-radius:9px;padding:5px 6px 5px 9px;font-size:11px;color:#b7c8d6}.directionArrow{color:#ffc477;font-size:18px;font-weight:900;min-width:21px;text-align:center}
+.kitchenShell{overflow:auto;max-width:100%;padding:16px;background-color:#0f1b24;background-image:radial-gradient(#2a415322 .7px,transparent .7px);background-size:8px 8px;border-top:1px solid #293b48;border-bottom:1px solid #293b48}.board{width:max-content;display:grid;grid-template-columns:repeat(17,var(--cell));grid-template-rows:repeat(10,var(--cell));gap:3px;user-select:none;touch-action:pan-x pan-y}.tile{position:relative;width:var(--cell);height:var(--cell);border:1px solid #293944;border-radius:7px;background:#182732;overflow:hidden;cursor:crosshair;display:grid;place-items:center;transition:background .10s}.tile:hover{border-color:#b7b4a0}.tile.selected{outline:2px solid #ffe0a1;outline-offset:-2px}.tile.empty{background:#182630}.tile.belt{background:#343f45;border-color:#485557}.tile.belt:before{content:'';position:absolute;inset:6px 0;border-top:3px dashed #947e61;border-bottom:3px dashed #947e61;transform:rotate(var(--rotation));opacity:.8}.tile.belt .arrow{position:absolute;color:#d7a76b;font-size:21px;font-weight:900;transform:rotate(var(--rotation));opacity:.9}.tile.raw{background:#4f3535;border-color:#78534a}.tile.bun{background:#584631;border-color:#806849}.tile.cheese{background:#5b512f;border-color:#857548}.tile.grill{background:#693c32;border-color:#b56850}.tile.stock{background:#345464;border-color:#568ba3}.tile.assembly{background:#4c4374;border-color:#8576c6}.tile.dispatch{background:#32594c;border-color:#55947d}.tile .machine-icon{font-size:21px;z-index:1;filter:drop-shadow(0 2px 2px #0005);margin-top:-8px}.tile .machine-name{position:absolute;bottom:3px;left:1px;right:1px;text-align:center;font-size:8px;color:#fff;font-weight:800;letter-spacing:-.025em;text-shadow:0 1px 2px #000c}.tile .facing{position:absolute;top:2px;right:3px;font-size:10px;font-weight:900;color:#f7dea0;z-index:2}.tile .item{position:absolute;display:grid;place-items:center;z-index:3;background:#101a20e6;border:1px solid #e1b469;border-radius:50%;height:29px;width:29px;font-size:18px;box-shadow:0 3px 9px #0008}.tile .counter{position:absolute;top:2px;left:3px;z-index:3;border-radius:5px;background:#08141cd9;color:#d4ebfa;font-size:9px;line-height:1;padding:4px 3px;font-weight:850}.tile .busy{position:absolute;bottom:0;left:0;height:4px;background:#ffb86a;z-index:4;transition:width .1s linear}.tile .blocked{position:absolute;top:2px;right:2px;z-index:5;color:#ff8b76;text-shadow:0 1px 3px #000;font-weight:900;font-size:13px}.tile .machine-icon.working{animation:pulse 1.6s ease-in-out infinite}@keyframes pulse{50%{transform:scale(1.16)}}
+.underboard{padding:11px 15px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.legend{display:flex;gap:13px;flex-wrap:wrap;font-size:11px;color:#afc0ce}.legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:4px;vertical-align:middle}.shortcuts{font-size:11px;color:#90a4b3}.notice{margin-top:13px;padding:12px 14px;background:#1c2d36;border:1px solid #324c57;border-radius:11px;color:#c5d3df;font-size:12px;line-height:1.6}.notice strong{color:#ffe1b1}.inspector{margin-top:12px}.inspectorBody{padding:0 16px 15px;font-size:12px;line-height:1.6;color:#bdccd8;min-height:65px}.inspectorBody strong{color:#fff}.inspectorDetail{background:#101d27;padding:9px;border-radius:8px;border:1px solid #30424f;margin-top:8px}.miniPill{display:inline-block;border-radius:5px;padding:2px 5px;background:#2e4655;margin:3px 4px 0 0;color:#d3e2ec}
+.side{display:flex;flex-direction:column;gap:14px}.side .panelHeader{padding-bottom:10px}.ordersWrap{padding:0 13px 13px}.orderList{display:flex;flex-direction:column;gap:8px;max-height:365px;overflow:auto}.order{border:1px solid #344753;background:#1c2c37;border-radius:10px;padding:11px 11px 10px}.orderHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:7px}.orderName{font-weight:800;font-size:12px}.orderMeta{font-size:11px;color:var(--muted);margin-top:4px}.timer{font-weight:850;font-variant-numeric:tabular-nums;font-size:12px;color:#99e8bd;white-space:nowrap}.timer.soon{color:#ffcd7b}.timer.late{color:#ff8181}.progress{height:4px;border-radius:10px;background:#3b4b55;margin-top:10px;overflow:hidden}.progress div{height:100%;background:#79dbb0;transition:width .3s}.order.soon .progress div{background:#ffbc61}.order.late .progress div{background:#ff8080}.statusline{font-size:10px;color:#abc1d0;margin-top:7px;display:flex;justify-content:space-between}.orderActions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px}.orderActions button:last-child{grid-column:span 2}.orderActions .btn{font-size:11px;padding:8px 5px}.activity{padding:0 14px 14px}.loglist{list-style:none;padding:0;margin:0;max-height:180px;overflow:auto}.loglist li{border-bottom:1px solid #2a3e4a;padding:8px 0;font-size:11px;color:#c4d3dd;line-height:1.4}.loglist li:last-child{border-bottom:0}.logtime{color:#8aabbd;margin-right:6px;font-variant-numeric:tabular-nums}.help{font-size:11px;line-height:1.7;color:#b7c9d7;padding:0 16px 17px}.help strong{color:#f4e0bc}.help code{padding:2px 5px;background:#233541;border:1px solid #3a4d5b;border-radius:4px;color:#f4d89f}.footer{color:#748b9b;text-align:center;margin-top:20px;font-size:11px}.checkbox{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);cursor:pointer}.checkbox input{accent-color:#ffb04d}.emptyorders{padding:17px 7px;text-align:center;color:#96adbb;font-size:12px}.toast{position:fixed;z-index:100;left:50%;bottom:25px;transform:translateX(-50%);border:1px solid #5e7481;color:#ecf4f6;background:#1f3441;border-radius:10px;padding:10px 14px;box-shadow:0 9px 35px #0007;font-weight:700;font-size:12px;opacity:0;pointer-events:none;transition:opacity .2s}.toast.visible{opacity:1}
+@media(max-width:1230px){.workspace{grid-template-columns:1fr}.side{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}.side .panel:first-child{grid-row:span 2}}@media(max-width:730px){.shell{padding:14px 11px}.stats{grid-template-columns:repeat(3,1fr)}.stat{padding:10px}.stat b{font-size:20px}.workspace{grid-template-columns:1fr}.side{display:flex}.topactions{width:100%}.topactions .btn{flex:1}h1{font-size:21px}h1 small{display:block;margin:2px 0 0}.panelHeader{padding:14px}.toolbar{padding:0 10px 12px}.tool{padding:7px}.underboard{padding:9px}.shortcuts{display:none}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="top">
+  <div class="identity"><div class="logo" aria-hidden="true">🍔</div><div><div class="eyebrow">Experimento jugable · MVP 0.1</div><h1>BURGER BELT <small>Factoría de fast food</small></h1></div></div>
+  <div class="topactions">
+    <span class="pill" id="runBadge"><span class="dot"></span><span id="runLabel">EN MARCHA</span></span>
+    <button id="pauseButton" class="btn primary">⏸ Pausar</button>
+    <button id="speedButton" class="btn">Velocidad 1×</button>
+    <button id="resetButton" class="btn ghost red">↺ Reiniciar</button>
+  </div>
+</header>
+<section class="stats" aria-label="Métricas">
+  <div class="stat"><span>Entregados a tiempo</span><b class="good" id="statDelivered">0</b></div>
+  <div class="stat"><span>Entregas tardías</span><b id="statLate">0</b></div>
+  <div class="stat"><span>Dinero ganado</span><b class="warn" id="statMoney">$0</b></div>
+  <div class="stat"><span>Desperdicio</span><b id="statWaste">0</b></div>
+  <div class="stat"><span>Tiempo de juego</span><b id="statClock">00:00</b></div>
+</section>
+<section class="workspace">
+ <main class="main">
+  <section class="panel">
+   <div class="panelHeader"><div><div class="panelTitle">Plano de producción</div><div class="subtle">Construí y modificá tu cocina mientras funciona.</div></div><div class="pill" id="toolName">👆 Inspeccionar</div></div>
+   <div class="toolbar" id="tools" role="toolbar" aria-label="Herramientas de construcción">
+      <button class="tool active" data-tool="inspect" title="Inspeccionar celda"><span class="emoji">👆</span>Inspeccionar</button>
+      <button class="tool" data-tool="belt" title="Cinta transportadora"><span class="emoji">➡️</span>Cinta</button>
+      <button class="tool" data-tool="raw" title="Fuente de carne cruda"><span class="emoji">🥩</span>Carne</button>
+      <button class="tool" data-tool="bun" title="Fuente de panes"><span class="emoji">🍞</span>Pan</button>
+      <button class="tool" data-tool="cheese" title="Fuente de queso"><span class="emoji">🧀</span>Queso</button>
+      <button class="tool" data-tool="grill" title="Cocina la carne cruda"><span class="emoji">🔥</span>Parrilla</button>
+      <button class="tool" data-tool="stock" title="Almacena carne cocida"><span class="emoji">📦</span>Stock</button>
+      <button class="tool" data-tool="assembly" title="Arma hamburguesas según pedidos"><span class="emoji">🤖</span>Armadora</button>
+      <button class="tool" data-tool="dispatch" title="Valida y entrega pedidos"><span class="emoji">🚚</span>Despacho</button>
+      <button class="tool" data-tool="erase" title="Eliminar instalación"><span class="emoji">✕</span>Borrar</button>
+      <div class="directionbox">Dirección <span id="directionArrow" class="directionArrow">→</span><button class="btn small" id="rotateButton" title="Rotar con tecla R">Girar R</button></div>
+   </div>
+   <div class="kitchenShell"><div class="board" id="board" aria-label="Grilla de la cocina de 17 columnas por 10 filas"></div></div>
+   <div class="underboard">
+      <div class="legend"><span><i style="background:#997c55"></i>Cintas</span><span><i style="background:#b56850"></i>Proceso</span><span><i style="background:#5c8fa5"></i>Almacén</span><span><i style="background:#8576c6"></i>Armado</span></div>
+      <div class="shortcuts">Clic: colocar / inspeccionar · Arrastrar: dibujar cintas · R: girar · Clic derecho: borrar · Espacio: pausa</div>
+   </div>
+  </section>
+  <div class="notice"><strong>MODELO HÍBRIDO:</strong> la carne cruda entra continuamente y se cocina incluso sin pedidos. El almacén retiene medallones listos. Los panes y el queso se solicitan según la demanda; la armadora utiliza el stock únicamente cuando llega una orden. Probá una hamburguesa doble para ver cómo se consumen dos medallones.</div>
+  <section class="panel inspector"><div class="panelHeader"><span class="panelTitle">Inspector de celda</span><span class="subtle" id="inspectorPos">—</span></div><div class="inspectorBody" id="inspectorBody">Hacé clic en una máquina con la herramienta <strong>Inspeccionar</strong> para ver su estado y sus reservas.</div></section>
+ </main>
+ <aside class="side">
+  <section class="panel">
+   <div class="panelHeader"><div><div class="panelTitle">📋 Pedidos en cola</div><div class="subtle">La armadora elige el pedido más urgente que pueda fabricar.</div></div><span class="pill" id="queueCount">0 pedidos</span></div>
+   <div class="ordersWrap">
+    <div class="orderList" id="orderList"></div>
+    <div class="orderActions">
+      <button class="btn" data-order="classic">+ Clásica</button><button class="btn" data-order="cheese">+ Con queso</button><button class="btn" data-order="double">+ Doble queso</button>
+    </div>
+    <label class="checkbox" style="margin-top:12px"><input type="checkbox" id="autoOrders" checked> Generar pedidos automáticamente</label>
+   </div>
+  </section>
+  <section class="panel"><div class="panelHeader"><span class="panelTitle">Actividad de la cocina</span><span class="subtle">En vivo</span></div><div class="activity"><ul class="loglist" id="logList"></ul></div></section>
+  <section class="panel"><div class="panelHeader"><span class="panelTitle">Reglas de este prototipo</span></div><div class="help">
+   <strong>🥩 Carne</strong> → parrilla → <strong>📦 stock</strong> (máximo 8).<br>
+   <strong>🍞 Pan</strong> y <strong>🧀 queso</strong> aparecen cuando hacen falta.<br>
+   <strong>🤖 Armadora</strong> recibe ingredientes por cualquier lado, consume lo que requiere un pedido y entrega una 🍔.<br>
+   <strong>🚚 Despacho</strong> debe recibir la hamburguesa por cintas.<br><br>
+   Las máquinas expulsan productos en la dirección de su flecha. Una celda ocupada bloquea la siguiente. <strong>Podés crear otras rutas y más máquinas.</strong><br><br>
+   Tecla <code>R</code>: girar herramienta · <code>Espacio</code>: pausar · Clic derecho: borrar.<br>
+   <strong>Objetivo:</strong> entregar pedidos a tiempo con el mínimo de desperdicio y bloqueos.
+  </div></section>
+ </aside>
+</section>
+<div class="footer">Prototipo autocontenido · Sin backend ni dependencias · Simulación simplificada de logística y recetas</div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+(()=>{
+'use strict';
+const W=17,H=10,DIRS=[[1,0],[0,1],[-1,0],[0,-1]],ARROWS=['→','↓','←','↑'];
+const RECIPES={classic:{name:'Hamburguesa clásica',emoji:'🍔',bun:1,patty:1,cheese:0,price:24,deadline:85},cheese:{name:'Hamburguesa con queso',emoji:'🧀🍔',bun:1,patty:1,cheese:1,price:31,deadline:98},double:{name:'Doble con queso',emoji:'🍔🍔',bun:1,patty:2,cheese:1,price:43,deadline:112}};
+const KINDS={empty:{name:'Espacio libre',icon:''},belt:{name:'Cinta',icon:'→'},raw:{name:'Proveedor de carne',icon:'🥩'},bun:{name:'Proveedor de pan',icon:'🍞'},cheese:{name:'Proveedor de queso',icon:'🧀'},grill:{name:'Parrilla',icon:'🔥'},stock:{name:'Almacén',icon:'📦'},assembly:{name:'Armadora de pedidos',icon:'🤖'},dispatch:{name:'Despacho',icon:'🚚'}};
+const ING={raw:'🥩',bun:'🍞',cheese:'🧀',patty:'🥓',burger:'🍔'};
+const $=s=>document.querySelector(s); const boardEl=$('#board'); const toolButtons=[...document.querySelectorAll('[data-tool]')];
+let cells,orders,history,logs,time,autoClock,orderId,tickId,playing=true,speed=1,tool='inspect',direction=0,selected=null,mouseDown=false,stats;
+const CEIL=7,randomOrder=()=>{let r=Math.random();return r<.30?'classic':r<.72?'cheese':'double'};
+function idx(x,y){return y*W+x} function valid(x,y){return x>=0&&x<W&&y>=0&&y<H} function at(x,y){return valid(x,y)?cells[idx(x,y)]:null}
+function make(kind='empty',dir=0){return {kind,dir,item:null,cooldown:0,rawCount:0,cooked:0,processing:null,store:0,inv:{bun:0,patty:0,cheese:0},job:null,output:null,blockedAt:0}}
+function put(x,y,kind,dir=0){cells[idx(x,y)]=make(kind,dir)}
+function defaultKitchen(){
+ put(1,1,'raw');put(2,1,'belt');put(3,1,'belt');put(4,1,'grill');put(5,1,'belt');put(6,1,'belt');put(7,1,'stock');put(8,1,'belt');put(9,1,'belt');
+ put(10,1,'belt',1);for(let y=2;y<=4;y++)put(10,y,'belt',1);
+ put(1,5,'bun');for(let x=2;x<=9;x++)put(x,5,'belt');put(10,5,'assembly');for(let x=11;x<=13;x++)put(x,5,'belt');put(14,5,'dispatch');
+ put(1,8,'cheese');for(let x=2;x<=9;x++)put(x,8,'belt');for(let y=6;y<=8;y++)put(10,y,'belt',3);
+}
+function initialize(){
+ cells=Array.from({length:W*H},()=>make()); orders=[];history=[];logs=[];time=0;autoClock=0;orderId=1;tickId=0;stats={onTime:0,late:0,money:0,waste:0,produced:0};selected=null;defaultKitchen();
+ addOrder('classic',false);addOrder('cheese',false);addOrder('double',false);
+ addLog('Cocina lista. La carne se cocina y almacena continuamente.');
+ render();
+}
+function addLog(msg){logs.unshift({time,msg});if(logs.length>7)logs.length=7;}
+function addOrder(recipeKey,notice=true){
+ if(orders.filter(o=>o.status!=='delivered').length>=CEIL){if(notice)toast('La cola está llena (máximo 7 pedidos)');return false}
+ const rec=RECIPES[recipeKey];const order={id:orderId++,recipeKey,createdAt:time,due:time+rec.deadline,status:'pending',doneAt:null}; orders.push(order);
+ if(notice)addLog(`Pedido #${order.id}: ${rec.name}.`);renderOrders();return true;
+}
+function toTime(s){s=Math.max(0,Math.floor(s));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
+function pendingNeed(kind){
+ let required=0;for(const o of orders)if(o.status==='pending')required+=RECIPES[o.recipeKey][kind]||0;
+ let buffered=0;for(const c of cells){if(c.kind==='assembly')buffered+=c.inv[kind]||0;if(c.kind==='belt'&&c.item&&c.item.type===kind)buffered++;}
+ return Math.max(0,required-buffered)
+}
+function receiver(cell,item){
+ switch(cell.kind){
+ case 'belt':if(cell.item)return false;cell.item=item;item.readyAt=time+.40;return true;
+ case 'grill':if(item.type!=='raw'||cell.rawCount>=3)return false;cell.rawCount++;return true;
+ case 'stock':if(item.type!=='patty'||cell.store>=8)return false;cell.store++;return true;
+ case 'assembly':if(!['bun','patty','cheese'].includes(item.type)||cell.inv[item.type]>=8)return false;cell.inv[item.type]++;return true;
+ case 'dispatch':if(item.type==='burger')finishOrder(item.orderId);else{stats.waste++;addLog('Ingrediente descartado: llegó sin armar al despacho.')}return true;
+ default:return false;
+ }
+}
+function send(x,y,c,item){let [dx,dy]=DIRS[c.dir],next=at(x+dx,y+dy);return next?receiver(next,item):false}
+function finishOrder(id){
+ let o=orders.find(o=>o.id===id);if(!o||o.status==='delivered'){stats.waste++;return}
+ let late=time>o.due;o.status='delivered';o.doneAt=time;
+ stats.produced++;if(late){stats.late++;stats.money+=Math.round(RECIPES[o.recipeKey].price*.55)}else{stats.onTime++;stats.money+=RECIPES[o.recipeKey].price}
+ addLog(`${late?'⏰ Entrega tardía':'✓ Entregado'} #${id}: ${RECIPES[o.recipeKey].name}.`);
+ history.unshift(o);if(history.length>30)history.pop();
+}
+function processMachine(c,dt){
+ if(c.kind==='raw'||c.kind==='bun'||c.kind==='cheese')return;
+ if(c.kind==='grill'){
+  if(c.processing!==null){c.processing-=dt;if(c.processing<=0){if(c.cooked<2){c.cooked++;c.processing=null}else c.processing=0;}}
+  if(c.processing===null&&c.rawCount>0){c.rawCount--;c.processing=2.4;}
+ }else if(c.kind==='assembly'){
+  if(c.job){c.job.left-=dt;if(c.job.left<=0&&c.output===null){c.output={type:'burger',orderId:c.job.orderId};let order=orders.find(o=>o.id===c.job.orderId);if(order)order.status='transit';c.job=null;}}
+  if(!c.job&&!c.output){
+    const candidates=orders.filter(o=>o.status==='pending').sort((a,b)=>a.due-b.due);
+    const order=candidates.find(o=>{let r=RECIPES[o.recipeKey];return c.inv.bun>=r.bun&&c.inv.patty>=r.patty&&c.inv.cheese>=r.cheese});
+    if(order){let r=RECIPES[order.recipeKey];c.inv.bun-=r.bun;c.inv.patty-=r.patty;c.inv.cheese-=r.cheese;order.status='assembling';c.job={orderId:order.id,left:2.3};addLog(`Armando pedido #${order.id} (${r.name}).`)}
+  }
+ }
+}
+function machineOutput(x,y,c,dt){
+ c.cooldown=Math.max(0,c.cooldown-dt);
+ if(c.cooldown>0)return;
+ if(c.kind==='raw'||c.kind==='bun'||c.kind==='cheese'){
+   const itemType=c.kind;
+   if(itemType!=='raw'&&pendingNeed(itemType)<=0)return;
+   if(send(x,y,c,{type:itemType})){c.cooldown=itemType==='raw'?2.1:itemType==='bun'?2.0:2.3;}
+ }else if(c.kind==='grill'&&c.cooked>0){
+   if(send(x,y,c,{type:'patty'})){c.cooked--;c.cooldown=.42;}
+ }else if(c.kind==='stock'&&c.store>0&&pendingNeed('patty')>0){
+   if(send(x,y,c,{type:'patty'})){c.store--;c.cooldown=.52;}
+ }else if(c.kind==='assembly'&&c.output){
+   if(send(x,y,c,c.output)){c.output=null;c.cooldown=.55;}
+ }
+}
+function advance(dt){
+ time+=dt;tickId++;
+ if($('#autoOrders').checked){autoClock+=dt;if(autoClock>=17){autoClock-=17;if(orders.filter(o=>o.status!=='delivered').length<CEIL)addOrder(randomOrder());}}
+ for(const c of cells)processMachine(c,dt);
+ // Two-phase movement: items travel at most one tile per 0.4 seconds.
+ // Collect before moving so the iteration order does not make items teleport.
+ const movable=[];for(let y=0;y<H;y++)for(let x=0;x<W;x++){let c=at(x,y);if(c.kind==='belt'&&c.item&&c.item.readyAt<=time)movable.push({x,y,c,item:c.item})}
+ for(const entry of movable){let {x,y,c,item}=entry;if(c.item!==item)continue;if(send(x,y,c,item)){c.item=null;c.blockedAt=0;}else if(c.blockedAt===0)c.blockedAt=time;}
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){let c=at(x,y);machineOutput(x,y,c,dt)}
+}
+function equipCell(x,y){let current=at(x,y);if(tool==='inspect'){selected={x,y};renderInspector();renderBoard();return}
+ if(tool==='erase'){if(current.kind!=='empty'){if(current.item||current.store||current.cooked||current.rawCount||current.output)stats.waste++;put(x,y,'empty');selected={x,y}}}
+ else {if(current.kind!==tool||current.dir!==direction){if(current.kind!=='empty'&&(current.item||current.store||current.cooked||current.rawCount||current.output))stats.waste++;put(x,y,tool,direction);selected={x,y}}}
+ renderBoard();renderInspector();
+}
+function createBoard(){boardEl.innerHTML='';for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+  const el=document.createElement('div');el.className='tile empty';el.tabIndex=0;el.dataset.x=x;el.dataset.y=y;el.setAttribute('role','button');el.setAttribute('aria-label',`Celda ${x},${y}`);
+  el.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();mouseDown=true;equipCell(x,y)});
+  el.addEventListener('pointerenter',()=>{if(mouseDown&&tool==='belt')equipCell(x,y)});
+  el.addEventListener('contextmenu',e=>{e.preventDefault();let previous=tool;tool='erase';equipCell(x,y);tool=previous;updateTools()});
+  el.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();equipCell(x,y)}});
+  boardEl.appendChild(el);
+ }}
+function renderBoard(){
+ const elements=boardEl.children;
+ for(let i=0;i<cells.length;i++){
+  let c=cells[i],el=elements[i],x=i%W,y=Math.floor(i/W);el.className='tile '+c.kind+(selected&&selected.x===x&&selected.y===y?' selected':'');el.style.setProperty('--rotation',(c.dir*90)+'deg');
+  let html='';if(c.kind==='belt')html='<span class="arrow">→</span>';
+  else if(c.kind!=='empty'){
+   const texts={raw:'CARNE',bun:'PAN',cheese:'QUESO',grill:'PARRILLA',stock:'STOCK',assembly:'ARMADORA',dispatch:'SALIDA'};
+   let working=c.processing!==null||!!c.job;
+   html=`<span class="machine-icon${working?' working':''}">${KINDS[c.kind].icon}</span><span class="machine-name">${texts[c.kind]}</span><span class="facing">${ARROWS[c.dir]}</span>`;
+   if(c.kind==='grill')html+=`<span class="counter">${c.rawCount} / ${c.cooked}</span>`;
+   if(c.kind==='stock')html+=`<span class="counter">${c.store}/8</span>`;
+   if(c.kind==='assembly')html+=`<span class="counter">${c.inv.bun}·${c.inv.patty}·${c.inv.cheese}</span>`;
+   if(c.kind==='grill'&&c.processing!==null)html+=`<span class="busy" style="width:${Math.max(0,Math.min(100,(1-c.processing/2.4)*100))}%"></span>`;
+   if(c.kind==='assembly'&&c.job)html+=`<span class="busy" style="width:${Math.max(0,Math.min(100,(1-c.job.left/2.3)*100))}%"></span>`;
+  }
+  if(c.item)html+=`<span class="item" title="${c.item.type}">${ING[c.item.type]}</span>`;
+  if(c.output)html+=`<span class="item" title="Hamburguesa terminada">🍔</span>`;
+  if(c.kind==='belt'&&c.item&&time-c.item.readyAt>2.5)html+='<span class="blocked" title="Cinta bloqueada">!</span>';
+  el.innerHTML=html;el.setAttribute('aria-label',`Celda ${x},${y}: ${KINDS[c.kind].name}${c.item?', contiene '+c.item.type:''}`);
+ }
+}
+function renderOrders(){
+ const active=orders.filter(o=>o.status!=='delivered').sort((a,b)=>a.due-b.due);
+ $('#queueCount').textContent=active.length+' pedido'+(active.length===1?'':'s');
+ $('#orderList').innerHTML=active.length?active.map(o=>{
+   let r=RECIPES[o.recipeKey],left=o.due-time,progress=Math.max(0,Math.min(100,left/(o.due-o.createdAt)*100)),risk=left<0?'late':left<24?'soon':'';
+   let status={pending:'Esperando ingredientes',assembling:'⚙️ En preparación',transit:'📦 Camino a despacho'}[o.status];
+   return `<div class="order ${risk}"><div class="orderHeader"><div><div class="orderName">#${o.id} · ${r.name}</div><div class="orderMeta">${r.bun} pan · ${r.patty} carne${r.cheese?' · '+r.cheese+' queso':''}</div></div><div class="timer ${risk}">${left<0?'+':''}${toTime(Math.abs(left))}</div></div><div class="progress"><div style="width:${progress}%"></div></div><div class="statusline"><span>${status||''}</span><span>$${r.price}</span></div></div>`;
+ }).join(''):'<div class="emptyorders">No hay pedidos pendientes.<br>Agregá uno para probar el circuito.</div>';
+}
+function renderInspector(){
+ if(!selected){$('#inspectorPos').textContent='—';$('#inspectorBody').innerHTML='Hacé clic en una máquina con la herramienta <strong>Inspeccionar</strong> para ver su estado y sus reservas.';return}
+ let {x,y}=selected,c=at(x,y);$('#inspectorPos').textContent=`(${x}, ${y})`;
+ let s=`<strong>${KINDS[c.kind].icon||'◻'} ${KINDS[c.kind].name}</strong> · salida ${ARROWS[c.dir]}`;
+ if(c.kind==='empty')s='<strong>Celda vacía.</strong> Elegí una herramienta para construir aquí.';
+ if(c.kind==='belt')s+=`<div class="inspectorDetail">${c.item?'Transportando: '+ING[c.item.type]+' '+c.item.type:'Sin ingredientes'}${c.item&&time-c.item.readyAt>2.5?' · ⚠️ La salida está bloqueada.':''}</div>`;
+ if(c.kind==='grill')s+=`<div class="inspectorDetail">Carne cruda en espera: <b>${c.rawCount}/3</b> · Medallones cocidos: <b>${c.cooked}/2</b><br>Estado: ${c.processing!==null?'Cocinando ('+c.processing.toFixed(1)+' s)':'Libre'}</div>`;
+ if(c.kind==='stock')s+=`<div class="inspectorDetail">Medallones almacenados: <b>${c.store}/8</b><br>Demanda pendiente: <b>${pendingNeed('patty')}</b> · Solo libera medallones cuando hacen falta.</div>`;
+ if(c.kind==='assembly')s+=`<div class="inspectorDetail"><span class="miniPill">🍞 Pan ${c.inv.bun}/8</span><span class="miniPill">🥓 Carne ${c.inv.patty}/8</span><span class="miniPill">🧀 Queso ${c.inv.cheese}/8</span><br>Estado: ${c.job?'Armando pedido #'+c.job.orderId:c.output?'Producto listo, salida ocupada':'Esperando pedido o ingredientes'}</div>`;
+ if(['raw','bun','cheese'].includes(c.kind))s+=`<div class="inspectorDetail">${c.kind==='raw'?'Producción continua.':`Producción según pedidos; faltan ${pendingNeed(c.kind)} unidades.`}<br>Próximo despacho: ${c.cooldown.toFixed(1)} s</div>`;
+ if(c.kind==='dispatch')s+='<div class="inspectorDetail">Recibe hamburguesas terminadas y acredita entregas. Otros ingredientes cuentan como desperdicio.</div>';
+ $('#inspectorBody').innerHTML=s;
+}
+function render(){renderBoard();renderOrders();renderInspector();$('#statDelivered').textContent=stats.onTime;$('#statLate').textContent=stats.late;$('#statMoney').textContent='$'+stats.money;$('#statWaste').textContent=stats.waste;$('#statClock').textContent=toTime(time);$('#logList').innerHTML=logs.map(l=>`<li><span class="logtime">${toTime(l.time)}</span>${l.msg}</li>`).join('')}
+function updateTools(){toolButtons.forEach(b=>b.classList.toggle('active',b.dataset.tool===tool));$('#toolName').textContent=KINDS[tool]?KINDS[tool].icon+' '+KINDS[tool].name:tool==='inspect'?'👆 Inspeccionar':'✕ Borrar';$('#directionArrow').textContent=ARROWS[direction]}
+function updateButtons(){$('#pauseButton').textContent=playing?'⏸ Pausar':'▶ Reanudar';$('#pauseButton').classList.toggle('primary',playing);$('#runLabel').textContent=playing?'EN MARCHA':'PAUSADA';$('#runBadge .dot').classList.toggle('paused',!playing);$('#speedButton').textContent=`Velocidad ${speed}×`}
+let toastHandle=null;function toast(msg){let el=$('#toast');el.textContent=msg;el.classList.add('visible');clearTimeout(toastHandle);toastHandle=setTimeout(()=>el.classList.remove('visible'),2400)}
+function rotate(){direction=(direction+1)%4;updateTools()}
+toolButtons.forEach(b=>b.addEventListener('click',()=>{tool=b.dataset.tool;updateTools()}));
+$('#rotateButton').addEventListener('click',rotate);
+$('#pauseButton').addEventListener('click',()=>{playing=!playing;updateButtons()});
+$('#speedButton').addEventListener('click',()=>{speed=speed===1?3:speed===3?6:1;updateButtons()});
+$('#resetButton').addEventListener('click',()=>{playing=true;speed=1;direction=0;tool='inspect';initialize();updateTools();updateButtons();toast('Cocina reiniciada')});
+$('[data-order="classic"]').addEventListener('click',()=>addOrder('classic'));
+$('[data-order="cheese"]').addEventListener('click',()=>addOrder('cheese'));
+$('[data-order="double"]').addEventListener('click',()=>addOrder('double'));
+window.addEventListener('pointerup',()=>mouseDown=false);
+window.addEventListener('blur',()=>mouseDown=false);
+window.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;if(e.key.toLowerCase()==='r'){rotate()}else if(e.code==='Space'){e.preventDefault();playing=!playing;updateButtons()}else if(e.key==='Escape'){tool='inspect';updateTools()}});
+createBoard();initialize();updateTools();updateButtons();
+setInterval(()=>{if(!playing)return;for(let i=0;i<speed;i++)advance(.10);render()},100);
+// Only for automated smoke tests, without affecting the normal interface.
+window.__burgerBeltDebug=()=>({time,orders:orders.map(({id,status,recipeKey})=>({id,status,recipeKey})),stats:{...stats},stock:at(7,1).store,grill:{raw:at(4,1).rawCount,cooked:at(4,1).cooked},assembler:{...at(10,5).inv},belts:cells.filter(c=>c.kind==='belt'&&c.item).length});
+})();
+</script>
+</body>
+</html>

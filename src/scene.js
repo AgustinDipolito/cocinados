@@ -1,0 +1,266 @@
+// La escena 3D: dibuja el estado de la simulación, no decide nada del juego.
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { BELT_TIME, BUILD_ORDER, RECIPES } from './data.js';
+import { isStuck } from './sim.js';
+import { C, beltTexture, alertTexture, buildMachine, buildItem, buildLot, buildGhost, tileFrame, burger } from './models.js';
+
+const PITCH = THREE.MathUtils.degToRad(54); // cuánto mira hacia abajo la cámara
+const SURFACE = { belt: 0.185, assembly: 0.47 }; // altura a la que apoya un producto
+const smooth = p => p * p * (3 - 2 * p);
+
+export function createScene(canvas) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(C.bg);
+  scene.fog = new THREE.Fog(C.bg, 60, 140);
+  scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = 0.35;
+
+  // Poca luz de relleno y un sol fuerte: las sombras son las que dan el volumen.
+  scene.add(new THREE.HemisphereLight(0xffe9cc, 0x4a5a78, 0.55));
+  const sun = new THREE.DirectionalLight(0xffe2b8, 3.4);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0004;
+  sun.shadow.normalBias = 0.03;
+  sun.shadow.radius = 5;
+  scene.add(sun, sun.target);
+
+  const camera = new THREE.PerspectiveCamera(32, 1, 0.5, 300);
+  const view = { tx: 0, tz: 0, dist: 20, fitDist: 20 };
+
+  const world = new THREE.Group(), itemLayer = new THREE.Group(), alerts = new THREE.Group();
+  scene.add(world, itemLayer, alerts);
+  const selectFrame = tileFrame(C.select), hoverFrame = tileFrame(C.hover);
+  scene.add(selectFrame, hoverFrame);
+
+  let lot = null, lotKey = '', machines = [], items = new Map(), ghost = null, ghostKind = null;
+  let shown = null; // la partida que se está dibujando
+  const ray = new THREE.Raycaster(), ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), v3 = new THREE.Vector3();
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+  function placeCamera() {
+    camera.position.set(view.tx, view.dist * Math.sin(PITCH), view.tz + view.dist * Math.cos(PITCH));
+    camera.lookAt(view.tx, 0, view.tz);
+    camera.updateMatrixWorld();
+  }
+
+  function resize() {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+
+  function rebuildLot(s) {
+    if (lot) world.remove(lot);
+    lot = buildLot(s.W, s.H);
+    world.add(lot);
+    for (const m of machines) if (m) world.remove(m.root);
+    machines = Array(s.W * s.H).fill(null);
+    const span = Math.max(s.W, s.H) * 0.75 + 3;
+    sun.target.position.set(s.W / 2, 0, s.H / 2);
+    sun.position.set(s.W / 2 - span * 0.55, span * 1.5, s.H / 2 + span * 0.7);
+    Object.assign(sun.shadow.camera, { left: -span, right: span, top: span, bottom: -span, near: 1, far: span * 4 });
+    sun.shadow.camera.updateProjectionMatrix();
+  }
+
+  function syncMachines(s, t, playing) {
+    for (let i = 0; i < s.cells.length; i++) {
+      const c = s.cells[i], key = c ? c.kind : '';
+      let m = machines[i];
+      if ((m?.key ?? '') !== key) {
+        if (m) world.remove(m.root);
+        m = machines[i] = c ? { key, root: buildMachine(c.kind) } : null;
+        if (m) {
+          m.root.position.set((i % s.W) + 0.5, 0, Math.floor(i / s.W) + 0.5);
+          if (m.root.userData.ui) m.root.userData.ui.rotation.x = -PITCH;
+          world.add(m.root);
+        }
+      }
+      if (!m) continue;
+      m.root.userData.body.rotation.y = -c.dir * Math.PI / 2;
+      m.root.userData.update?.(c, t, playing);
+    }
+  }
+
+  function syncItems(s, t) {
+    const seen = new Set();
+    let alertN = 0;
+    const show = (item, x, y, z) => {
+      let o = items.get(item.id);
+      if (!o) { o = buildItem(item); items.set(item.id, o); itemLayer.add(o); }
+      o.position.set(x, y, z);
+      seen.add(item.id);
+    };
+    for (let i = 0; i < s.cells.length; i++) {
+      const c = s.cells[i];
+      if (!c) continue;
+      const x = i % s.W, y = Math.floor(i / s.W);
+      if (c.item) {
+        const p = smooth(THREE.MathUtils.clamp((t - c.item.t0) / BELT_TIME, 0, 1));
+        const px = THREE.MathUtils.lerp(c.item.fx, x, p) + 0.5, pz = THREE.MathUtils.lerp(c.item.fy, y, p) + 0.5;
+        show(c.item, px, SURFACE.belt, pz);
+        if (isStuck(s, x, y)) {
+          let a = alerts.children[alertN++];
+          if (!a) { a = new THREE.Sprite(new THREE.SpriteMaterial({ map: alertTexture, depthTest: false })); a.scale.setScalar(0.5); alerts.add(a); }
+          a.visible = true;
+          a.position.set(px, 0.95, pz);
+        }
+      }
+      if (c.output) show(c.output, x + 0.54, SURFACE.assembly, y + 0.48);
+    }
+    for (let i = alertN; i < alerts.children.length; i++) alerts.children[i].visible = false;
+    for (const [id, o] of items) if (!seen.has(id)) { itemLayer.remove(o); items.delete(id); }
+  }
+
+  /** Dibuja un cuadro. t es el tiempo de simulación con su fracción, para que el movimiento no salte. */
+  function render(s, t, dt, playing) {
+    if (s !== shown) { // otra partida: sus productos repiten números, así que no se reusa ningún modelo
+      shown = s;
+      for (const o of items.values()) itemLayer.remove(o);
+      items.clear();
+    }
+    const key = `${s.W}x${s.H}`;
+    if (key !== lotKey) { lotKey = key; rebuildLot(s); }
+    syncMachines(s, t, playing);
+    syncItems(s, t);
+    if (playing && !reducedMotion.matches) beltTexture.offset.x -= dt / BELT_TIME; // con movimiento reducido la goma queda quieta
+    renderer.render(scene, camera);
+  }
+
+  /** Celda bajo un punto de la pantalla, o null si cae fuera del terreno. */
+  function pick(s, clientX, clientY) {
+    const g = groundAt(clientX, clientY);
+    if (!g) return null;
+    const x = Math.floor(g.x), y = Math.floor(g.z);
+    return x >= 0 && y >= 0 && x < s.W && y < s.H ? { x, y } : null;
+  }
+
+  function groundAt(clientX, clientY) {
+    const r = canvas.getBoundingClientRect();
+    ray.setFromCamera({ x: ((clientX - r.left) / r.width) * 2 - 1, y: -((clientY - r.top) / r.height) * 2 + 1 }, camera);
+    return ray.ray.intersectPlane(ground, new THREE.Vector3());
+  }
+
+  /** Posición en pantalla (px) de un punto del terreno. */
+  function project(x, y, height = 0) {
+    v3.set(x + 0.5, height, y + 0.5).project(camera);
+    const r = canvas.getBoundingClientRect();
+    return { x: r.left + (v3.x + 1) / 2 * r.width, y: r.top + (1 - v3.y) / 2 * r.height };
+  }
+
+  function clampView(s) {
+    view.tx = THREE.MathUtils.clamp(view.tx, 0, s.W);
+    view.tz = THREE.MathUtils.clamp(view.tz, 0, s.H + 2);
+    view.dist = THREE.MathUtils.clamp(view.dist, 6, view.fitDist * 1.4);
+    placeCamera();
+  }
+
+  /** Arrastrar: el punto del piso que estaba bajo el dedo sigue bajo el dedo. */
+  function panPixels(s, fromX, fromY, toX, toY) {
+    const a = groundAt(fromX, fromY), b = groundAt(toX, toY);
+    if (!a || !b) return;
+    view.tx += a.x - b.x; view.tz += a.z - b.z;
+    clampView(s);
+  }
+  function pan(s, dx, dz) { view.tx += dx; view.tz += dz; clampView(s); }
+  function zoom(s, factor) { view.dist *= factor; clampView(s); }
+  function lookAt(s, x, y) { view.tx = x + 0.5; view.tz = y + 0.5; clampView(s); }
+
+  /** Encuadra el terreno entero dentro de la parte de la pantalla que el HUD deja libre. */
+  function fit(s, inset) {
+    resize();
+    const r = canvas.getBoundingClientRect();
+    const safe = { l: inset.left, t: inset.top, r: r.width - inset.right, b: r.height - inset.bottom };
+    const corners = [[0, 0, -0.3], [s.W, 0, -0.3], [0, 2, -0.3], [s.W, 2, -0.3], [-0.5, 0, s.H + 0.5], [s.W + 0.5, 0, s.H + 0.5]];
+    const bounds = () => {
+      const b = { l: Infinity, t: Infinity, r: -Infinity, b: -Infinity };
+      for (const [x, y, z] of corners) {
+        v3.set(x, y, z).project(camera);
+        const px = (v3.x + 1) / 2 * r.width, py = (1 - v3.y) / 2 * r.height;
+        b.l = Math.min(b.l, px); b.r = Math.max(b.r, px); b.t = Math.min(b.t, py); b.b = Math.max(b.b, py);
+      }
+      return b;
+    };
+    view.tx = s.W / 2; view.tz = s.H / 2;
+    for (view.dist = 6; view.dist < 200; view.dist *= 1.04) {
+      placeCamera();
+      const b = bounds();
+      if (b.r - b.l <= safe.r - safe.l && b.b - b.t <= safe.b - safe.t) break;
+    }
+    for (let i = 0; i < 4; i++) { // centra lo encuadrado en la zona libre
+      const b = bounds();
+      const from = groundAt(r.left + (b.l + b.r) / 2, r.top + (b.t + b.b) / 2), to = groundAt(r.left + (safe.l + safe.r) / 2, r.top + (safe.t + safe.b) / 2);
+      if (!from || !to) break;
+      view.tx += from.x - to.x; view.tz += from.z - to.z;
+      placeCamera();
+    }
+    view.fitDist = view.dist;
+  }
+
+  function setSelected(cell) {
+    selectFrame.visible = !!cell;
+    if (cell) selectFrame.position.set(cell.x + 0.5, 0, cell.y + 0.5);
+  }
+
+  /** Cursor sobre una celda: marco siempre, y la máquina fantasma si hay una herramienta de construir. */
+  function setHover(cell, kind, dir, ok) {
+    hoverFrame.visible = !!cell;
+    if (ghostKind !== kind) {
+      if (ghost) scene.remove(ghost);
+      ghost = kind ? buildGhost(kind) : null;
+      if (ghost) scene.add(ghost);
+      ghostKind = kind;
+    }
+    if (ghost) ghost.visible = !!cell;
+    if (!cell) return;
+    hoverFrame.position.set(cell.x + 0.5, 0, cell.y + 0.5);
+    if (ghost) {
+      ghost.position.set(cell.x + 0.5, 0.01, cell.y + 0.5);
+      ghost.userData.body.rotation.y = -dir * Math.PI / 2;
+      ghost.userData.material.color.set(ok ? C.ok : C.bad);
+    }
+  }
+
+  /** Miniaturas para el HUD, sacadas de los mismos modelos del juego. Devuelve { clave: dataURL }. */
+  function thumbnails(size = 144) {
+    const out = {}, stage = new THREE.Scene(), cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 20);
+    stage.environment = scene.environment;
+    stage.environmentIntensity = 0.7;
+    const key = new THREE.DirectionalLight(0xfff0d8, 2.4);
+    key.position.set(-2, 4, 3);
+    stage.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.3), key);
+    cam.position.set(2.2, 3.1, 3.4);
+    renderer.setPixelRatio(1);
+    renderer.setSize(size, size, false);
+    renderer.setClearAlpha(0);
+    const shoot = (name, obj, lookY, half) => {
+      stage.add(obj);
+      Object.assign(cam, { left: -half, right: half, top: half, bottom: -half });
+      cam.lookAt(0, lookY, 0);
+      cam.updateProjectionMatrix();
+      renderer.render(stage, cam);
+      out[name] = canvas.toDataURL('image/png');
+      stage.remove(obj);
+    };
+    for (const kind of BUILD_ORDER) shoot(kind, buildMachine(kind), kind === 'belt' ? 0.1 : 0.5, kind === 'belt' ? 0.72 : 0.95);
+    for (const k in RECIPES) shoot('recipe_' + k, burger(k), 0.14, 0.27);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    resize();
+    return out;
+  }
+
+  resize();
+  placeCamera();
+  /** Para las pruebas: qué modelo se está dibujando para cada producto. */
+  const shownItems = () => [...items].map(([id, o]) => ({ id, type: o.userData.type }));
+  return { render, pick, project, pan, panPixels, zoom, lookAt, fit, resize, setSelected, setHover, thumbnails, shownItems };
+}
