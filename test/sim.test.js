@@ -9,7 +9,7 @@ const kinds = s => s.cells.filter(Boolean).map(c => c.kind);
 
 test('carrera: la cocina inicial entrega a tiempo el primer pedido y lo cobra', () => {
   const s = sim.newGame('career', 1);
-  while (!s.stats.onTime && s.time < 60) sim.step(s, STEP);
+  while (!s.stats.onTime && s.time < 60 && !s.over) sim.step(s, STEP); // una partida cerrada no avanza: sin !s.over el bucle no termina
   assert.ok(s.time < RECIPES.classic.deadline, `tardó ${s.time.toFixed(1)} s`);
   assert.equal(s.money, START_MONEY + RECIPES.classic.price);
   assert.equal(s.stats.late + s.stats.expired + s.stats.waste, 0);
@@ -28,12 +28,27 @@ test('modo libre: la cocina del prototipo entrega las tres recetas', () => {
 });
 
 test('la misma semilla da la misma partida, y guardar y volver no la cambia', () => {
-  const a = run(sim.newGame('career', 42), 200), b = run(sim.newGame('career', 42), 100);
+  // En modo libre salen las tres recetas, así que el azar decide de verdad qué pide cada cliente.
+  const recipes = s => { const seen = []; for (let i = 0; i < 4000; i++) { sim.step(s, STEP); for (const e of s.events.splice(0)) if (e.type === 'order') seen.push(s.orders.find(o => o.id === e.id).recipeKey); } return seen.join(); };
+  const a = run(sim.newGame('sandbox', 42), 400), b = run(sim.newGame('sandbox', 42), 150);
   const restored = sim.deserialize(sim.serialize(b));
   assert.notEqual(restored, null);
-  run(restored, 100);
+  run(restored, 250);
   assert.equal(sim.serialize(restored), sim.serialize(a));
-  assert.notEqual(sim.serialize(run(sim.newGame('career', 43), 200)), sim.serialize(a));
+  const menu = recipes(sim.newGame('sandbox', 42));
+  assert.equal(new Set(menu.split(',')).size, 3, 'en 400 s tendrían que salir las tres recetas');
+  assert.equal(recipes(sim.newGame('sandbox', 42)), menu);
+  assert.notEqual(recipes(sim.newGame('sandbox', 43)), menu);
+});
+
+test('un producto tarda 0,4 s en cruzar cada celda de cinta', () => {
+  const s = sim.newGame('sandbox', 1);
+  s.autoOrders = false;
+  sim.place(s, 0, 0, 'raw', 0);
+  for (let x = 1; x <= 6; x++) sim.place(s, x, 0, 'belt', 0);
+  const arrival = x => { while (!sim.at(s, x, 0).item && s.time < 30) sim.step(s, STEP); return s.time; };
+  const t1 = arrival(1), t6 = arrival(6);
+  assert.ok(t6 - t1 > 5 * 0.4 - 0.01 && t6 - t1 < 5 * 0.5 + 0.01, `cinco celdas en ${(t6 - t1).toFixed(2)} s`);
 });
 
 test('un guardado roto o de otra versión se descarta', () => {
@@ -92,7 +107,7 @@ test('ampliar el terreno cobra, agranda y no mueve nada de lo construido', () =>
   run(s, 25);
   assert.ok(s.stats.onTime >= 1, 'la cocina dejó de entregar después de ampliar');
   s.money = 1e6;
-  while (sim.canExpand(s)) sim.expand(s);
+  for (let i = 0; i < 20 && sim.canExpand(s); i++) sim.expand(s);
   assert.equal(sim.expand(s).reason, 'max');
 });
 
@@ -145,7 +160,7 @@ test('carrera: sin despacho los clientes se van, baja la reputación y la cocina
 
 test('carrera: la cocina inicial aguanta los primeros niveles y después exige crecer', () => {
   const s = sim.newGame('career', 7);
-  while (s.level < 4 && s.time < 600) sim.step(s, STEP);
+  while (s.level < 4 && s.time < 600 && !s.over) sim.step(s, STEP);
   assert.equal(s.level, 4);
   assert.equal(s.hearts, HEARTS, 'no debería perder reputación antes del nivel 4');
   run(s, 900);
@@ -156,7 +171,7 @@ test('modo libre: nada cuesta, la cola tiene tope y nunca se cierra', () => {
   const s = sim.newGame('sandbox', 1);
   assert.equal(sim.cost(s, 'assembly'), 0);
   sim.erase(s, 14, 5);
-  while (sim.addOrder(s, 'double', true));
+  for (let i = 0; i < 50 && sim.addOrder(s, 'double', true); i++);
   assert.equal(s.orders.length, QUEUE_MAX);
   assert.ok(s.events.some(e => e.type === 'queueFull'));
   run(s, 900);

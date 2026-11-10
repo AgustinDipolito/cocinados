@@ -101,7 +101,9 @@ function netPrice(cell, kind) {
 
 function hover(cell) {
   ui.cursor = cell;
-  const kind = BUILD_ORDER.includes(ui.tool) ? ui.tool : null;
+  const cur = cell && sim.at(game, cell.x, cell.y);
+  const same = cur?.kind === ui.tool && cur.dir === ui.dir; // ya está puesta así: el fantasma sólo la taparía
+  const kind = BUILD_ORDER.includes(ui.tool) && !same ? ui.tool : null;
   scene.setHover(cell, kind, ui.dir, !cell || !kind || game.mode !== 'career' || game.money >= netPrice(cell, kind));
 }
 

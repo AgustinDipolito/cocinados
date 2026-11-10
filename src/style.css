@@ -247,6 +247,7 @@ dialog.sheet::backdrop { background: var(--scrim); }
   #orders { flex-direction: column; overflow: hidden auto; align-self: start; max-height: 100%; }
   #tickets { flex-direction: column; overflow: visible; flex: none; padding: 0; }
   .ticket { width: auto; }
+  #orderAdd { flex-wrap: wrap; align-self: stretch; }
   :root { --side-h-compact: 62dvh; }
   #side { max-height: var(--side-h-compact); }
   dialog.sheet { padding: var(--pad); }

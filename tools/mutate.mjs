@@ -24,7 +24,8 @@ const MUTATIONS = [
   ['el ingrediente suelto no cuenta como desperdicio', 'src/sim.js', "else { s.stats.waste++; log(s, 'logWaste');", "else { log(s, 'logWaste');"],
   ['la hamburguesa sin cliente no se anota', 'src/sim.js', "log(s, 'logOrphan', { id }); ", ''],
   ['la armadora arranca otro trabajo con la salida ocupada', 'src/sim.js', 'if (!c.job && !c.output) {', 'if (!c.job) {'],
-  ['los productos cruzan dos celdas por paso', 'src/sim.js', 'if (c.item === item && send(s, x, y, c, item)) c.item = null;', 'if (send(s, x, y, c, item)) c.item = null;'],
+  ['los productos cruzan la cinta sin esperar', 'src/sim.js', 'c.item && c.item.readyAt <= s.time && send(', 'c.item && send('],
+  ['guardar pierde la semilla', 'src/sim.js', 'JSON.stringify({ ...s, events: [] })', 'JSON.stringify({ ...s, events: [], seed: 1 })'],
   ['falta una frase en inglés', 'src/i18n.js', "    logOrphan: 'The burger for order #{id} arrived after the customer had left.',\n", ''],
   ['una traducción pierde su hueco', 'src/i18n.js', "toastNoMoney: 'Not enough money: ${n} short.'", "toastNoMoney: 'Not enough money.'"],
   ['el español tutea', 'src/i18n.js', 'Elegí una máquina de la barra y tocá una celda.', 'Puedes elegir una máquina de la barra.'],
@@ -32,14 +33,16 @@ const MUTATIONS = [
   ['el código pide una frase que no existe', 'src/hud.js', "t('ordersEmpty')", "t('ordersVacio')"],
 ];
 
+const TIMEOUT = 60000;
 let bad = 0;
 for (const [name, file, find, replace] of MUTATIONS) {
   const original = readFileSync(file, 'utf8');
   if (original.split(find).length !== 2) { console.log(`VIEJA   ${name}: el texto aparece ${original.split(find).length - 1} veces en ${file}`); bad++; continue; }
   writeFileSync(file, original.replace(find, () => replace));
-  let red;
-  try { red = spawnSync(process.execPath, ['--test'], { encoding: 'utf8' }).status !== 0; } finally { writeFileSync(file, original); }
-  console.log(`${red ? 'roja   ' : 'VERDE  '} ${name}`);
+  let run;
+  try { run = spawnSync(process.execPath, ['--test'], { encoding: 'utf8', timeout: TIMEOUT }); } finally { writeFileSync(file, original); }
+  const hung = run.error?.code === 'ETIMEDOUT', red = run.status !== 0 && !hung;
+  console.log(`${hung ? 'COLGADA' : red ? 'roja   ' : 'VERDE  '} ${name}`); // una prueba que se cuelga no es un rojo: es un bucle sin tope
   if (!red) bad++;
 }
 const clean = spawnSync(process.execPath, ['--test'], { encoding: 'utf8' }).status === 0;

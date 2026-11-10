@@ -67,6 +67,14 @@ function measure(maxSizes, touch) {
   for (const el of scope.querySelectorAll('button, select, summary, label.check')) {
     if (!visible(el)) continue;
     const r = el.getBoundingClientRect(), name = (el.getAttribute('aria-label') ?? el.textContent).trim();
+    // recortado por un ancestro que no se puede desplazar en ese eje: lo que queda afuera no se alcanza nunca
+    let box = { l: r.left, t: r.top, r: r.right, b: r.bottom }, lost = 0;
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const cs = getComputedStyle(p), q = p.getBoundingClientRect();
+      if (cs.overflowX !== 'visible') { const l = Math.max(box.l, q.left), rr = Math.min(box.r, q.right); if (/hidden|clip/.test(cs.overflowX)) lost += (box.r - box.l) - Math.max(0, rr - l); box.l = l; box.r = rr; }
+      if (cs.overflowY !== 'visible') { const t = Math.max(box.t, q.top), bb = Math.min(box.b, q.bottom); if (/hidden|clip/.test(cs.overflowY)) lost += (box.b - box.t) - Math.max(0, bb - t); box.t = t; box.b = bb; }
+    }
+    if (lost > 2) out.problems.push(`control recortado sin desplazamiento (${lost.toFixed(0)} px): ${name.slice(0, 30)}`);
     if (r.width < touch - 0.5 || r.height < touch - 0.5) out.problems.push(`control chico (${r.width.toFixed(0)}×${r.height.toFixed(0)}): ${name.slice(0, 30)}`);
     if (!name && el.tagName !== 'SELECT') out.problems.push(`control sin nombre: ${el.outerHTML.slice(0, 60)}`);
   }
@@ -155,10 +163,16 @@ await pool(runs, async ([lang, vp]) => {
     await finger.end();
     await click('[data-act=closeHelp]');
     await noDialog();
-    const b = await page.evaluate(() => window.__bb.scene.project(5, 1, 0.3)); // se mide ahora: el primer toque pudo correr la vista
+    // El primer toque eligió su celda (1,5) y la vista se corrió para mostrarla. Se suelta la selección y se toca
+    // esa misma celda, que seguro quedó a la vista; las coordenadas se miden recién ahora.
+    await frames();
+    await click('[data-act=closeInspector]');
+    await until('selección suelta', () => !window.__bb.ui.selected);
+    const b = await page.evaluate(() => window.__bb.scene.project(1, 5, 0));
+    check(where, 'toque', await page.evaluate(p => document.elementFromPoint(p.x, p.y)?.id === 'scene', b), 'la celda del toque quedó debajo de un panel');
     await page.touchscreen.tap(b.x, b.y);
     await frames();
-    check(where, 'toque', await page.evaluate(() => window.__bb.ui.selected?.x === 5 && window.__bb.ui.selected?.y === 1), 'después de una hoja abierta a mitad de un toque, el tablero no responde');
+    check(where, 'toque', await page.evaluate(() => window.__bb.ui.selected?.x === 1 && window.__bb.ui.selected?.y === 5), 'después de una hoja abierta a mitad de un toque, el tablero no responde');
     await click('[data-act=closeInspector]');
   }
 

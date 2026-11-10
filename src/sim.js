@@ -75,7 +75,7 @@ export function availableRecipes(s) {
   if (!isCareer(s)) return keys;
   return keys.filter(k => {
     const r = RECIPES[k];
-    return s.level >= r.level ;
+    return s.level >= r.level && INGREDIENTS.every(i => !r[i] || hasKind(s, SOURCE_OF[i]));
   });
 }
 
@@ -316,14 +316,12 @@ export function step(s, dt) {
   if (isCareer(s)) expireOrders(s);
   if (s.over) return;
   for (const c of s.cells) if (c) process(s, c, dt);
-  // Dos fases: primero se junta lo que se puede mover, después se mueve. Así el orden de recorrido
-  // no hace que un producto cruce dos celdas en un mismo paso.
-  const movable = [];
+  // Un producto recién llegado a una cinta no está listo hasta BELT_TIME después (readyAt):
+  // eso es lo que impide que cruce dos celdas en un mismo paso, sea cual sea el orden de recorrido.
   for (let y = 0; y < s.H; y++) for (let x = 0; x < s.W; x++) {
     const c = at(s, x, y);
-    if (c?.kind === 'belt' && c.item && c.item.readyAt <= s.time) movable.push([x, y, c, c.item]);
+    if (c?.kind === 'belt' && c.item && c.item.readyAt <= s.time && send(s, x, y, c, c.item)) c.item = null;
   }
-  for (const [x, y, c, item] of movable) if (c.item === item && send(s, x, y, c, item)) c.item = null;
   for (let y = 0; y < s.H; y++) for (let x = 0; x < s.W; x++) {
     const c = at(s, x, y);
     if (c) output(s, x, y, c, dt);
