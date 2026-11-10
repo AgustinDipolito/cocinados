@@ -1,0 +1,2 @@
+# Fin de línea LF en todos lados: tools/mutate.mjs busca textos de varias líneas y con CRLF no los encuentra.
+* text=auto eol=lf
