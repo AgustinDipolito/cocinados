@@ -127,7 +127,7 @@ function finishOrder(s, id, x, y) {
   s.stats.earned += amount;
   s.money += amount;
   log(s, late ? 'logLate' : 'logDelivered', { id, recipe: o.recipeKey });
-  emit(s, 'delivered', { x, y, amount, late });
+  emit(s, 'delivered', { id, x, y, amount, late });
   while (isCareer(s) && delivered(s) >= deliveriesFor(s.level)) {
     s.level++;
     s.hearts = Math.min(HEARTS, s.hearts + 1);

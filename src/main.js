@@ -212,8 +212,10 @@ function levelToast(ev) {
   hud.toast(text);
 }
 
+/** Atiende lo que anunció la simulación y lo devuelve, para que la escena también lo dibuje. */
 function drainEvents() {
-  for (const ev of game.events.splice(0)) {
+  const events = game.events.splice(0);
+  for (const ev of events) {
     if (ev.type === 'delivered') hud.floater(scene.project(ev.x, ev.y, 1.3), `+$${ev.amount}`, ev.late ? 'late' : 'ok');
     else if (ev.type === 'waste') hud.floater(scene.project(ev.x, ev.y, 1.3), t('floatWaste'), 'bad');
     else if (ev.type === 'levelup') levelToast(ev);
@@ -228,6 +230,7 @@ function drainEvents() {
       hud.showOver(game, isBest);
     }
   }
+  return events;
 }
 
 // ---------- el bucle ----------
@@ -240,10 +243,10 @@ function frame(now) {
     acc += dt * ui.speed;
     while (acc >= STEP) { sim.step(game, STEP); acc -= STEP; }
   }
-  drainEvents();
+  const events = drainEvents();
   if (ui.selected && !sim.valid(game, ui.selected.x, ui.selected.y)) select(null);
   if (ui.cursor) hover(ui.cursor);
-  scene.render(game, game.time + (running ? acc : 0), dt, running);
+  scene.render(game, game.time + (running ? acc : 0), dt, running, events);
   if (started) hud.update(game, ui);
   if (reveal && ui.selected) revealSelected();
   if (now - lastSave > SAVE_EVERY) { lastSave = now; save(); }

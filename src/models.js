@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RECIPES, CAP, TIMES } from './data.js';
+import { curb } from './crowd.js';
 
 // ---------- paleta 3D ----------
 export const C = {
@@ -14,6 +15,7 @@ export const C = {
   bun: 0xe2a455, bunIn: 0xf5dfae, raw: 0xe0707a, patty: 0x6e3d24, cheese: 0xffc526, sesame: 0xfff3cf,
   ember: 0xff5a1a, lamp: 0xffa040, bag: 0xc79a62, gold: 0xf2c14e, knob: 0xd9413a,
   ok: 0x52d68a, bad: 0xff5d4d, select: 0xffd23f, hover: 0xffffff, frameEdge: 0x2a1f17, robot: 0xff8a2b,
+  sidewalk: 0x8f98a3, curb: 0x6b7480,
 };
 
 const std = (color, roughness = 0.6, metalness = 0, extra = {}) =>
@@ -102,6 +104,35 @@ export const jamTexture = spriteTexture((g, s) => {
   g.fillStyle = '#2a1f17';
   for (const x of [c - s * 0.11, c + s * 0.04]) g.fillRect(x, c - s * 0.15, s * 0.07, s * 0.3);
 });
+
+/** Marca sobre un cliente: cada estado con su forma (círculo, triángulo, cuadrado, estallido) además del color. */
+function markTexture(fill, shape, glyph) {
+  return spriteTexture((g, s) => {
+    const c = s / 2;
+    g.beginPath();
+    shape(g, s, c);
+    g.closePath();
+    g.fillStyle = fill; g.fill();
+    g.lineWidth = 8; g.lineJoin = 'round'; g.strokeStyle = '#2a1f17'; g.stroke();
+    g.lineWidth = 11; g.lineCap = 'round'; g.strokeStyle = '#fff'; g.fillStyle = '#fff';
+    g.beginPath(); glyph(g, s, c); g.stroke();
+  });
+}
+const MARK_TEXTURES = {
+  '': markTexture('#3fae7d', (g, s, c) => g.arc(c, c, s * 0.4, 0, 7), (g, s, c) => { // a tiempo: círculo con tilde
+    g.moveTo(c - s * 0.17, c + s * 0.01); g.lineTo(c - s * 0.04, c + s * 0.14); g.lineTo(c + s * 0.18, c - s * 0.12);
+  }),
+  soon: markTexture('#e8941a', (g, s, c) => { g.moveTo(c, s * 0.08); g.lineTo(s * 0.93, s * 0.86); g.lineTo(s * 0.07, s * 0.86); }, (g, s, c) => { // por vencer: triángulo con «!»
+    g.moveTo(c, s * 0.38); g.lineTo(c, s * 0.58); g.moveTo(c, s * 0.73); g.lineTo(c, s * 0.735);
+  }),
+  late: markTexture('#e23b2e', (g, s) => g.roundRect(s * 0.1, s * 0.1, s * 0.8, s * 0.8, s * 0.12), (g, s, c) => { // vencido: cuadrado con reloj
+    g.moveTo(c + s * 0.22, c); g.arc(c, c, s * 0.22, 0, 7); g.moveTo(c, c - s * 0.13); g.lineTo(c, c); g.lineTo(c + s * 0.1, c + s * 0.06);
+  }),
+  angry: markTexture('#9e1c14', (g, s, c) => { // enojado: estallido de puntas con un garabato
+    for (let i = 0; i < 20; i++) { const a = i * Math.PI / 10, r = s * (i % 2 ? 0.3 : 0.46); g.lineTo(c + Math.cos(a) * r, c + Math.sin(a) * r); }
+  }, (g, s, c) => { g.moveTo(c - s * 0.16, c + s * 0.06); g.lineTo(c - s * 0.06, c - s * 0.08); g.lineTo(c + s * 0.04, c + s * 0.06); g.lineTo(c + s * 0.15, c - s * 0.08); }),
+};
+const MARKS = Object.fromEntries(Object.entries(MARK_TEXTURES).map(([k, map]) => [k, new THREE.SpriteMaterial({ map, depthTest: false })]));
 
 // ---------- comida ----------
 const PATTY_H = 0.07, CHEESE_H = 0.025, BUN_H = 0.05;
@@ -326,6 +357,36 @@ export function buildMachine(kind) {
   return root;
 }
 
+// ---------- clientes ----------
+const SHIRTS = [C.meatBox, C.stock, C.assembly, C.dispatch, C.cheeseBox, C.robot, C.wainscot];
+const SKINS = [C.bunIn, C.bun, C.wood, C.patty], HAIRS = [C.frameEdge, C.patty, C.darkSteel, C.gold], PANTS = [C.darkSteel, C.slab, C.grill];
+const toys = new Map(), toyOf = color => toys.get(color) ?? (toys.set(color, toy(color)), toys.get(color));
+/** Pierna o brazo que cuelga de su articulación (y), para balancearlo al caminar. */
+const limb = (w, h, m, x, y) => { const g = group(box(w, h, 0.09, m, 0, -h / 2, 0, 0.035)); g.position.set(x, y, 0); return g; };
+
+/** Un cliente mirando a +Z. look (entero) elige la variante de colores. update(mark, walking, t): marca sobre la cabeza ('' | 'soon' | 'late' | 'angry' | null) y paso. */
+export function buildCustomer(look) {
+  const h = Math.imul(look, 2654435761) >>> 0, of = (list, k) => toyOf(list[(h >>> k) % list.length]);
+  const shirt = of(SHIRTS, 0), skin = of(SKINS, 8);
+  const legs = [-0.075, 0.075].map(x => limb(0.1, 0.3, of(PANTS, 24), x, 0.3)), arms = [-0.2, 0.2].map(x => limb(0.07, 0.27, shirt, x, 0.6));
+  const head = mesh(geo('head', () => new THREE.SphereGeometry(0.13, 18, 12)), skin, 0, 0.77, 0);
+  const hair = mesh(geo('hair', () => new THREE.SphereGeometry(0.138, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2)), of(HAIRS, 16), 0, 0.79, -0.012);
+  const eyes = [-0.047, 0.047].map(x => mesh(geo('eye', () => new THREE.SphereGeometry(0.02, 8, 6)), M.black, x, 0.78, 0.118));
+  const body = group(...legs, ...arms, box(0.32, 0.34, 0.2, shirt, 0, 0.47, 0, 0.08), head, hair, ...eyes);
+  const sign = new THREE.Sprite(MARKS['']);
+  sign.scale.setScalar(0.42); sign.position.y = 1.15; sign.renderOrder = 8;
+  const root = group(body, sign);
+  root.userData.update = (mark, walking, t) => {
+    sign.visible = mark != null;
+    if (sign.visible) sign.material = MARKS[mark];
+    const swing = walking ? Math.sin(t * 11) * 0.6 : 0;
+    legs[0].rotation.x = arms[1].rotation.x = swing;
+    legs[1].rotation.x = arms[0].rotation.x = -swing;
+    body.position.y = walking ? Math.abs(swing) * 0.05 : 0;
+  };
+  return root;
+}
+
 // ---------- el local ----------
 export function buildLot(W, H) {
   const g = group();
@@ -341,6 +402,9 @@ export function buildLot(W, H) {
     box(W + 0.5, 1.9, 0.25, wallM, W / 2, 0.95, -0.125, 0.04), box(W + 0.52, 0.62, 0.27, band, W / 2, 0.31, -0.125, 0.04),
     box(0.25, 0.7, H + 0.25, wallM, -0.125, 0.35, H / 2 - 0.125, 0.04), box(0.25, 0.7, H + 0.25, wallM, W + 0.125, 0.35, H / 2 - 0.125, 0.04),
   );
+  const c = curb({ W, H }), cx = (c.x0 + c.x1) / 2; // la vereda del frente, donde hace fila la gente
+  g.add(box(c.x1 - c.x0, 0.5, c.z1 - c.z0, std(C.sidewalk, 0.85), cx, -0.25, (c.z0 + c.z1) / 2, 0.1),
+    box(c.x1 - c.x0, 0.08, 0.14, std(C.curb, 0.8), cx, 0, c.z1 - 0.07, 0.03));
   for (let x = 2; x + 1.5 <= W; x += 4) { // una ventana cada cuatro celdas
     g.add(box(1.7, 0.8, 0.06, M.wood, x + 0.75, 1.25, 0.01, 0.06), box(1.5, 0.62, 0.08, glass, x + 0.75, 1.25, 0.02, 0.04));
   }

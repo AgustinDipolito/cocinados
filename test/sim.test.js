@@ -13,7 +13,7 @@ test('carrera: la cocina inicial entrega a tiempo el primer pedido y lo cobra', 
   assert.ok(s.time < RECIPES.classic.deadline, `tardó ${s.time.toFixed(1)} s`);
   assert.equal(s.money, START_MONEY + RECIPES.classic.price);
   assert.equal(s.stats.late + s.stats.expired + s.stats.waste, 0);
-  assert.ok(s.events.some(e => e.type === 'delivered' && e.amount === RECIPES.classic.price && e.x === 10 && e.y === 3));
+  assert.ok(s.events.some(e => e.type === 'delivered' && e.id === 1 && e.amount === RECIPES.classic.price && e.x === 10 && e.y === 3));
 });
 
 test('modo libre: la cocina del prototipo entrega las tres recetas', () => {

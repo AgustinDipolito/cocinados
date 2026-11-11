@@ -129,6 +129,17 @@ await pool(runs, async ([lang, vp]) => {
   const click = sel => page.evaluate(s => document.querySelector(s).click(), sel);
   const noDialog = () => until('sin hojas abiertas', () => !document.querySelector('dialog[open]'));
   const clickCell = async (x, y) => { const p = await page.evaluate((x, y) => window.__bb.scene.project(x, y, 0.3), x, y); await page.mouse.click(p.x, p.y); };
+  /** La fila de la vereda: una persona por pedido en cola, en orden de llegada desde la cabeza, cada una en su lugar y a la vista. */
+  const checkQueue = async label => {
+    const r = await page.evaluate(() => {
+      const { game, scene } = window.__bb, list = scene.shownCustomers().filter(p => p.queued).sort((a, b) => b.x - a.x);
+      const hidden = list.filter(p => [0.1, 1.15].some(h => { const q = scene.project(p.x - 0.5, p.z - 0.5, h); return document.elementFromPoint(q.x, q.y)?.id !== 'scene'; }));
+      return { shown: list.map(p => p.key).join(), want: game.orders.map(o => o.id).join(), loose: list.filter(p => !p.settled).length, hidden: hidden.map(p => p.key).join() };
+    });
+    check(where, label, r.want && r.shown === r.want, `clientes ${r.shown || 'ninguno'}, pedidos ${r.want || 'ninguno'}`);
+    check(where, label, !r.loose, `${r.loose} clientes fuera de su lugar`);
+    check(where, label, !r.hidden, `clientes tapados por un panel o fuera de la ventana: ${r.hidden}`);
+  };
 
   page.setDefaultNavigationTimeout(120000); // el WebGL por software de la prueba tarda en arrancar
   await page.goto(url);
@@ -154,6 +165,7 @@ await pool(runs, async ([lang, vp]) => {
     return tools.length === 8 && new Set(tools).size === 8 && !tools.includes(document.querySelector('.ticket img').src) && srcs.every(s => s.length > 2000);
   }), 'dos herramientas comparten miniatura, o una usa la de una receta');
   check(where, 'estado por omisión', first.tools === 12 && first.orders === 1 && first.money === 100, JSON.stringify(first));
+  await checkQueue('fila al abrir'); // el primer cliente espera unos 25 s: la fila no cambia mientras se mide
 
   if (touch) { // un dedo queda apoyado mientras se abre una hoja; después, un toque tiene que seguir eligiendo
     const a = await page.evaluate(() => window.__bb.scene.project(1, 5, 0));
@@ -230,6 +242,7 @@ await pool(runs, async ([lang, vp]) => {
     const shown = scene.shownJams().map(key).sort();
     return !game.over && want.length > 0 && want.join() === shown.join();
   }), 'la capa no marca las celdas trabadas');
+  await checkQueue('fila con la cola cargada');
   await shot('5b-atascos');
   await click('[data-act=toggleJams]');
   await frames();
@@ -282,6 +295,7 @@ await pool(runs, async ([lang, vp]) => {
     const shown = scene.shownItems();
     return shown.length > 0 && shown.length === want.size && shown.every(i => want.get(i.id) === i.type);
   }), 'un producto se dibuja con el modelo de la partida anterior');
+  await checkQueue('fila al continuar otra partida'); // los clientes de la partida recuperada ya están en su lugar, ninguno de la anterior
 
   // Lo guardado vuelve: se sale, se recarga la página y se continúa.
   await click('#controls [data-act=exit]');

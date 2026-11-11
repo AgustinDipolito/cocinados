@@ -35,17 +35,24 @@ de a una cosa y exige que `npm test` se ponga rojo.
 como «62 %»). Diagnóstico en `src/sim.js`: `diagShares(celda)` (proporciones `{ work, blocked, wait, idle }`
 o null), `bottleneck(s)` (`{ x, y, kind, shares, upstream }` o null), `upstreamBlocked(s, x, y)`, `lost(s)`
 (perdidos por plazo más por cola llena). En la escena, `setJams(on)` y `shownJams()` (para el arnés).
+Fila de clientes en `src/crowd.js` (vista pura, sin three ni DOM, probada con node): `orderRisk(pedido, tiempo)`
+(`''`, `'soon'`, `'late'`: la usan la tarjeta y la marca del cliente), `curb(terreno)` (la vereda: carriles,
+cabeza de la fila, entrada y salida), `newCrowd()`, `stepCrowd(crowd, pedidos, eventos, tiempo, dt, vereda, quieto)`.
+`buildCustomer(look)` en `models.js`; `shownCustomers()` en la escena (para el arnés).
 
 **Idiomas.** Español (origen, voseo, sin exclamaciones) e inglés. Mecanismo: `STRINGS` y `t()` en
 `src/i18n.js`; `t()` tira error si la clave no existe y la prueba compara idiomas.
 
 **Arnés.** `npm run check` = `npm test` (1 s) → `npm run build` (1 s) → `npm run shots` (unos 9 min:
-6 corridas, 54 capturas en `shots/`, entre ellas la capa de atascos prendida con un clic, WebGL por software). `npm run shots -- phone-es` corre una sola.
+6 corridas, 54 capturas en `shots/`, entre ellas la capa de atascos prendida con un clic, WebGL por software; el
+recorrido comprueba tres veces que la fila de la vereda es la cola de pedidos, en orden, en su lugar y sin panel encima). `npm run shots -- phone-es` corre una sola.
 
 **Inscripciones.** Una máquina nueva se anota en: `KINDS` y `BUILD_ORDER` (`data.js`); `accepts`,
 `receive`, `process` u `output` (`sim.js`); su caso en `cellState` (`sim.js`: cuándo trabaja, está
 bloqueada, espera o está libre) y, si lleva productos como una cinta, la exclusión en `bottleneck`; `builders` (`models.js`); `SURFACE` si apoya productos
 (`scene.js`); `inspectorText` (`hud.js`); `kind_`, `kindLong_`, `kindHint_` en los dos idiomas.
+Una forma nueva de que un pedido deje la cola: su evento con `id` y su motivo de salida en `stepCrowd` (`crowd.js`);
+sin evento, el cliente desaparece en el acto. Una forma nueva de local: su frente en `curb` (`crowd.js`).
 Una receta: `RECIPES`, `SANDBOX_DEADLINE` y `recipe_`. Un ingrediente: `INGREDIENTS`, `SOURCE_OF`,
 `buildItem`, `item_` y la familia en `test/i18n.test.js`.
 
@@ -76,6 +83,7 @@ y se lee en el HUD (`hud.js`) o en la escena (`scene.js`). Lo que no es del jueg
 - Una espera sobre un juego en pausa no llega nunca. La condición y lo que depende de ella van en el mismo instante.
 - Un bucle `while (s.time < T)` sobre una partida que cierra no termina: `step` ya no avanza. Todo bucle de prueba lleva `!s.over`.
 - Los campos numéricos que se actualizan en cada paso se escriben por nombre (`d.work *= k`), no con `for…in`: el acceso por clave costaba el doble.
+- Una espera de prueba «hasta que ya no esté» dio verde antes del primer paso: sobre la lista vacía, «nadie con ese número» es cierto. La condición se evalúa después de avanzar.
 - En la hoja de cierre, dos oraciones nuevas van en un solo párrafo: el arnés cuenta bloques de prosa. Un renglón de datos (proporciones del inspector) va como `.stat`, no como párrafo.
 
 **Entrega.** `npm run build` deja el juego en `dist/`, con rutas relativas: se sirve desde cualquier
@@ -101,6 +109,12 @@ navegador (`npm run shots`) no corre ahí: se corre a mano antes de subir.
 - La capa de atascos es vista (`ui.jams`, no se guarda): rombo ámbar con dos barras sobre cada celda con
   bloqueo desde `DIAG.jam`. El botón va en la barra de arriba como secundario (en compacta, dentro de «más»).
 - `stats.expired` cuenta sólo plazos vencidos y `stats.turnedAway` la cola llena; «Perdidos» muestra `lost(s)`.
+- Clientes visibles: una persona por pedido en la vereda del frente (`curb`), en orden de llegada con la cabeza a la
+  derecha; llegan por la izquierda, al cobrar salen por la derecha, al vencer vuelven por la izquierda con el estallido
+  de enojo; con la cola llena uno llega por el carril de afuera, mira y se vuelve enojado. Marcas: círculo verde con
+  tilde (a tiempo), triángulo ámbar con «!» (por vencer), cuadrado rojo con reloj (vencido), estallido (enojo). Caminan en
+  tiempo de juego (en pausa quietos, con 6× a 6×). Con movimiento reducido o al cambiar de partida, cada uno en su lugar
+  sin caminar. La escena recibe los eventos del cuadro en `render(…, events)`; `delivered` lleva `id`.
 - Ninguna máquina de estados explícita: se auditaron ocho (pedido, parrilla, armadora, sesión, gesto, HUD, cachés de la escena) y todas son chicas o derivadas. Lo que las cuida es el invariante de `test/sim.test.js` y los comentarios de fase en `sim.js` y `main.js`.
 
 **Con permiso.** Publicar el juego, crear el repositorio o hacer commits, cambiar el nombre «Burger

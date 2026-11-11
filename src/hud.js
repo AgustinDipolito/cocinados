@@ -2,6 +2,7 @@
 import { BUILD_ORDER, RECIPES, KINDS, CAP, QUEUE_MAX, HEARTS, LOT, deliveriesFor } from './data.js';
 import { at, cost, refund, expandCost, canExpand, pendingNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck } from './sim.js';
 import { t, LANGS, getLang } from './i18n.js';
+import { orderRisk } from './crowd.js';
 
 const svg = d => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 const ICON = {
@@ -108,7 +109,7 @@ export function createHud(root, actions, thumbs) {
     const list = [...s.orders].sort((a, b) => a.due - b.due);
     set('tickets', list.length ? list.map(o => {
       const r = RECIPES[o.recipeKey], left = o.due - s.time, total = o.due - o.createdAt;
-      const risk = left < 0 ? 'late' : left < total * 0.3 ? 'soon' : '';
+      const risk = orderRisk(o, s.time);
       const pct = Math.max(0, Math.min(100, left / total * 100));
       return `<article class="ticket panel ${risk}">
         ${img('recipe_' + o.recipeKey)}
