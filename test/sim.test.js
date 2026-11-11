@@ -245,6 +245,7 @@ test('invariante: el estado de cada pedido coincide con lo que hay en la cocina,
         if (c.job) add(jobs, c.job.orderId);
         if (c.output) add(burgers, c.output.orderId);
         if (c.item?.type === 'burger') add(burgers, c.item.orderId);
+        if (c.item2?.type === 'burger') add(burgers, c.item2.orderId); // el segundo carril del puente
       }
       for (const o of s.orders) {
         const want = { pending: [0, 0], assembling: [1, 0], transit: [0, 1] }[o.status];

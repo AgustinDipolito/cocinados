@@ -183,6 +183,11 @@ progress::-moz-progress-bar { background: var(--ok); }
 .tool:disabled { cursor: default; color: var(--ink-soft); }
 .tool .dir { display: grid; transform: rotate(var(--turn)); }
 .sep { flex: none; width: var(--border); background: var(--line); margin: 6px 2px; }
+/* Notebook: las catorce herramientas de ancho fijo no entran; cada una toma el ancho de su nombre. */
+@media (min-width: 761px) and (max-width: 1340px) and (min-height: 521px) {
+  #tools { gap: 4px; }
+  .tool { width: auto; min-width: var(--touch); padding-inline: 6px; }
+}
 
 /* ---------- hojas ---------- */
 dialog.sheet {

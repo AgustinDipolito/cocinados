@@ -70,6 +70,7 @@ export const beltTexture = canvasTexture(128, (g, s) => {
   for (const x of [8, 72]) { g.beginPath(); g.moveTo(x, 28); g.lineTo(x + 36, 64); g.lineTo(x, 100); g.stroke(); }
 });
 M.belt = new THREE.MeshStandardMaterial({ map: beltTexture, roughness: 0.9 });
+M.rubber = std(C.rubber, 0.9); // goma lisa: el divisor y el puente no corren en un solo sentido
 
 const floorTexture = canvasTexture(256, (g, s) => {
   const h = s / 2;
@@ -135,6 +136,8 @@ const MARK_TEXTURES = {
 const MARKS = Object.fromEntries(Object.entries(MARK_TEXTURES).map(([k, map]) => [k, new THREE.SpriteMaterial({ map, depthTest: false })]));
 
 // ---------- comida ----------
+/** Altura del carril alto del puente (donde apoyan sus productos). */
+export const BRIDGE_TOP = 0.64;
 const PATTY_H = 0.07, CHEESE_H = 0.025, BUN_H = 0.05;
 const patty = (m = M.patty) => cyl(0.15, 0.15, PATTY_H, m, 0, PATTY_H / 2, 0);
 const cheeseSlice = () => { const o = box(0.3, CHEESE_H, 0.3, M.cheese, 0, CHEESE_H / 2, 0, 0.01); o.rotation.y = Math.PI / 4; return o; };
@@ -232,6 +235,28 @@ const builders = {
         box(1, 0.05, 0.06, M.steel, 0, 0.2, 0.4, 0.02), box(1, 0.05, 0.06, M.steel, 0, 0.2, -0.4, 0.02),
       ),
     };
+  },
+
+  /** Divisor: base de cinta con goma lisa, entrada abierta por atrás y una flecha por cada salida. */
+  splitter() {
+    const top = mesh(geo('padTop', () => new THREE.PlaneGeometry(0.86, 0.86).rotateX(-Math.PI / 2)), M.rubber, 0, 0.181, 0);
+    top.castShadow = false;
+    const body = group(box(0.98, 0.18, 0.98, M.darkSteel, 0, 0.09, 0, 0.05), top, cyl(0.09, 0.09, 0.02, M.arrow, 0, 0.19, 0, 6));
+    for (const turn of [0, 1, 3]) { const g = group(outArrow(0.185)); g.rotation.y = -turn * Math.PI / 2; body.add(g); }
+    for (const z of [-0.43, 0.43]) body.add(box(0.06, 0.07, 0.12, M.steel, -0.46, 0.21, z, 0.02)); // las dos jambas de la entrada
+    return { body };
+  },
+
+  /** Puente: un carril bajo de oeste a este y uno alto de norte a sur, sobre cuatro patas. */
+  bridge() {
+    const low = mesh(geo('bridgeLow', () => new THREE.PlaneGeometry(1, 0.62).rotateX(-Math.PI / 2)), M.rubber, 0, 0.181, 0);
+    const high = mesh(geo('bridgeHigh', () => new THREE.PlaneGeometry(0.62, 1).rotateX(-Math.PI / 2)), M.rubber, 0, BRIDGE_TOP + 0.001, 0);
+    low.castShadow = high.castShadow = false;
+    const body = group(box(1, 0.18, 0.74, M.darkSteel, 0, 0.09, 0, 0.03), low,
+      box(0.74, 0.08, 1, M.darkSteel, 0, BRIDGE_TOP - 0.04, 0, 0.03), high,
+      box(0.05, 0.06, 1, M.steel, 0.36, BRIDGE_TOP + 0.03, 0, 0.02), box(0.05, 0.06, 1, M.steel, -0.36, BRIDGE_TOP + 0.03, 0, 0.02));
+    for (const x of [-0.42, 0.42]) for (const z of [-0.42, 0.42]) body.add(cyl(0.04, 0.04, BRIDGE_TOP, M.steel, x, BRIDGE_TOP / 2, z, 10));
+    return { body };
   },
 
   raw: () => source(M.meatBox, () => patty(M.raw), PATTY_H),

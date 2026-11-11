@@ -45,6 +45,10 @@ export const STRINGS = {
     kindHint_stock: 'Guarda hasta {max} carnes cocidas y las suelta cuando hay pedidos.',
     kindHint_assembly: 'Arma el pedido más urgente que pueda completar.',
     kindHint_dispatch: 'Recibe hamburguesas y cobra el pedido.',
+    kind_splitter: 'Divisor', kind_bridge: 'Puente',
+    kindLong_splitter: 'Divisor de cinta', kindLong_bridge: 'Puente de cintas',
+    kindHint_splitter: 'Recibe por atrás y reparte por turnos entre el frente y los dos costados.',
+    kindHint_bridge: 'Cruza dos cintas sin mezclarlas: lo que entra por un lado sale por el opuesto.',
 
     recipe_classic: 'Clásica', recipe_cheese: 'Con queso', recipe_double: 'Doble con queso',
     item_raw: 'carne cruda', item_patty: 'carne cocida', item_bun: 'pan', item_cheese: 'queso', item_burger: 'una hamburguesa',
@@ -61,6 +65,8 @@ export const STRINGS = {
     insBeltEmpty: 'Sin producto.',
     insBeltItem: 'Lleva {item}.',
     insStuck: 'Sin salida: la celda siguiente no recibe {item}.',
+    insBridge: 'Carril horizontal: {h}. Carril vertical: {v}.',
+    laneEmpty: 'vacío',
     insGrill: 'Carne cruda en espera: {raw} de {rawMax}. Cocidas: {cooked} de {cookedMax}.',
     insGrillBusy: 'Cocinando, faltan {s} s.',
     insGrillIdle: 'Parrilla libre.',
@@ -111,7 +117,7 @@ export const STRINGS = {
     overLost: 'Clientes perdidos por demora: {expired}. Por encontrar la cola llena: {turned}.',
 
     helpGoal: 'Entregá cada pedido antes de que se le acabe el tiempo. La carne sale del proveedor, se cocina en la parrilla, espera en el almacén y va a la armadora. El pan y el queso salen cuando un pedido los necesita.',
-    helpBuild: 'Elegí una máquina de la barra y tocá una celda. Las cintas se dibujan arrastrando y toman la dirección del arrastre. Cada máquina saca su producto por el lado de la flecha amarilla.',
+    helpBuild: 'Elegí una máquina de la barra y tocá una celda. Las cintas se dibujan arrastrando y toman la dirección del arrastre. Cada máquina saca su producto por el lado de la flecha amarilla. El divisor reparte una cinta entre varias salidas y el puente deja cruzar dos cintas.',
     helpCareer: 'En Carrera, cada entrega paga y te acerca al nivel siguiente, donde los clientes llegan más seguido. Un cliente que se va sin su pedido te saca un punto de reputación. Sin puntos, la cocina cierra.',
     helpKeys: 'Teclado: R gira, Espacio pausa, Esc vuelve a Inspeccionar, las flechas mueven el cursor, Enter construye, Supr borra, WASD mueve la cámara, + y − acercan y alejan. Mouse: clic derecho borra, la rueda acerca y el botón del medio arrastra la vista.',
 
@@ -164,6 +170,10 @@ export const STRINGS = {
     kindHint_stock: 'Holds up to {max} cooked patties and releases them when there are orders.',
     kindHint_assembly: 'Assembles the most urgent order it can complete.',
     kindHint_dispatch: 'Takes burgers and collects payment for the order.',
+    kind_splitter: 'Splitter', kind_bridge: 'Bridge',
+    kindLong_splitter: 'Belt splitter', kindLong_bridge: 'Belt bridge',
+    kindHint_splitter: 'Takes products from behind and sends them in turns to the front and both sides.',
+    kindHint_bridge: 'Crosses two belts without mixing them: what comes in on one side leaves on the opposite one.',
 
     recipe_classic: 'Classic', recipe_cheese: 'Cheeseburger', recipe_double: 'Double cheese',
     item_raw: 'raw meat', item_patty: 'a cooked patty', item_bun: 'a bun', item_cheese: 'cheese', item_burger: 'a burger',
@@ -180,6 +190,8 @@ export const STRINGS = {
     insBeltEmpty: 'Nothing on it.',
     insBeltItem: 'Carrying {item}.',
     insStuck: 'Dead end: the next cell does not take {item}.',
+    insBridge: 'Horizontal lane: {h}. Vertical lane: {v}.',
+    laneEmpty: 'empty',
     insGrill: 'Raw meat waiting: {raw} of {rawMax}. Cooked: {cooked} of {cookedMax}.',
     insGrillBusy: 'Cooking, {s} s left.',
     insGrillIdle: 'Grill is free.',
@@ -230,7 +242,7 @@ export const STRINGS = {
     overLost: 'Customers lost to slow orders: {expired}. To a full queue: {turned}.',
 
     helpGoal: 'Deliver every order before its time runs out. Meat leaves the supplier, cooks on the grill, waits in storage and goes to the assembler. Buns and cheese come out when an order needs them.',
-    helpBuild: 'Pick a machine from the bar and tap a cell. Belts are drawn by dragging and take the direction of the drag. Every machine puts its product out on the side of the yellow arrow.',
+    helpBuild: 'Pick a machine from the bar and tap a cell. Belts are drawn by dragging and take the direction of the drag. Every machine puts its product out on the side of the yellow arrow. The splitter shares one belt among several outputs and the bridge lets two belts cross.',
     helpCareer: 'In Career, every delivery pays and brings you closer to the next level, where customers arrive more often. A customer who leaves without their order costs a reputation point. With no points left, the kitchen closes.',
     helpKeys: 'Keyboard: R rotates, Space pauses, Esc goes back to Inspect, arrows move the cursor, Enter builds, Delete removes, WASD moves the camera, + and − zoom. Mouse: right click removes, the wheel zooms and the middle button drags the view.',
 

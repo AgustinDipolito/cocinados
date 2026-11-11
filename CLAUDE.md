@@ -35,6 +35,9 @@ de a una cosa y exige que `npm test` se ponga rojo.
 como «62 %»). Diagnóstico en `src/sim.js`: `diagShares(celda)` (proporciones `{ work, blocked, wait, idle }`
 o null), `bottleneck(s)` (`{ x, y, kind, shares, upstream }` o null), `upstreamBlocked(s, x, y)`, `lost(s)`
 (perdidos por plazo más por cola llena). En la escena, `setJams(on)` y `shownJams()` (para el arnés).
+Reparto en `src/sim.js`: `pendingNeed(s, ingrediente)` (lo que pide la cocina), `sourceNeed(s, x, y)` (lo que tiene que soltar
+la fuente a demanda o el almacén de esa celda), `isStuck(s, x, y, slot)` (`slot` `'item'` o `'item2'`, el carril vertical del puente).
+`BRIDGE_TOP` en `models.js` (altura del carril alto del puente, la usa `SURFACE` de la escena).
 Fila de clientes en `src/crowd.js` (vista pura, sin three ni DOM, probada con node): `orderRisk(pedido, tiempo)`
 (`''`, `'soon'`, `'late'`: la usan la tarjeta y la marca del cliente), `curb(terreno)` (la vereda: carriles,
 cabeza de la fila, entrada y salida), `newCrowd()`, `stepCrowd(crowd, pedidos, eventos, tiempo, dt, vereda, quieto)`.
@@ -44,13 +47,19 @@ cabeza de la fila, entrada y salida), `newCrowd()`, `stepCrowd(crowd, pedidos, e
 `src/i18n.js`; `t()` tira error si la clave no existe y la prueba compara idiomas.
 
 **Arnés.** `npm run check` = `npm test` (1 s) → `npm run build` (1 s) → `npm run shots` (unos 9 min:
-6 corridas, 54 capturas en `shots/`, entre ellas la capa de atascos prendida con un clic, WebGL por software; el
+6 corridas, 60 capturas en `shots/`, entre ellas la capa de atascos prendida con un clic y el divisor y el puente puestos con clics, WebGL por software; el
 recorrido comprueba tres veces que la fila de la vereda es la cola de pedidos, en orden, en su lugar y sin panel encima). `npm run shots -- phone-es` corre una sola.
 
 **Inscripciones.** Una máquina nueva se anota en: `KINDS` y `BUILD_ORDER` (`data.js`); `accepts`,
 `receive`, `process` u `output` (`sim.js`); su caso en `cellState` (`sim.js`: cuándo trabaja, está
-bloqueada, espera o está libre) y, si lleva productos como una cinta, la exclusión en `bottleneck`; `builders` (`models.js`); `SURFACE` si apoya productos
+bloqueada, espera o está libre); `builders` (`models.js`); `SURFACE` si apoya productos
 (`scene.js`); `inspectorText` (`hud.js`); `kind_`, `kindLong_`, `kindHint_` en los dos idiomas.
+Si lleva productos de paso (como cinta, divisor y puente): `carries: true` en `KINDS` (la saca del cuello de botella y de las
+proporciones del inspector, la mueve en `step` y la cuenta como lo que viaja), su caso en `exits` y en `receive` (`sim.js`),
+y el arrastre de cinta en `main.js` pasa por encima sin reemplazarla. Si girarla no cambia nada, `noTurn: true` (queda en
+dirección 0, el inspector no ofrece Girar). Una fuente a demanda nueva se regula con `sourceNeed`.
+La barra de herramientas sale de `BUILD_ORDER`: con catorce piezas entra en 1024 px porque en notebook cada herramienta
+toma el ancho de su nombre (`style.css`); en teléfono se desplaza.
 Una forma nueva de que un pedido deje la cola: su evento con `id` y su motivo de salida en `stepCrowd` (`crowd.js`);
 sin evento, el cliente desaparece en el acto. Una forma nueva de local: su frente en `curb` (`crowd.js`).
 Una receta: `RECIPES`, `SANDBOX_DEADLINE` y `recipe_`. Un ingrediente: `INGREDIENTS`, `SOURCE_OF`,
@@ -84,6 +93,13 @@ y se lee en el HUD (`hud.js`) o en la escena (`scene.js`). Lo que no es del jueg
 - Un bucle `while (s.time < T)` sobre una partida que cierra no termina: `step` ya no avanza. Todo bucle de prueba lleva `!s.over`.
 - Los campos numéricos que se actualizan en cada paso se escriben por nombre (`d.work *= k`), no con `for…in`: el acceso por clave costaba el doble.
 - Una espera de prueba «hasta que ya no esté» dio verde antes del primer paso: sobre la lista vacía, «nadie con ese número» es cierto. La condición se evalúa después de avanzar.
+- El reparto del plan (cada pedido a la armadora que más lo cubre, menos todo lo que viaja) trababa con un pan compartido
+  por divisor: el pan que esperaba en la cinta de una armadora llena tapaba la necesidad de la otra. Lo que va de paso
+  hacia una sola armadora cuenta como inventario de ésa, no como suelto; la prueba de propiedad lo encontró.
+- Con la necesidad de toda la cocina, en dos líneas separadas la segunda juntaba carne y nunca recibía pan: el pan de la
+  primera se recorre antes y salía siempre. Cada fuente mira las armadoras a las que llega su salida.
+- La barra de herramientas ya no entraba en 1024 px antes de sumar piezas (Girar cortado, Ampliar oculto) y el arnés no
+  lo marcaba porque la barra se desplaza. Se miró la captura.
 - En la hoja de cierre, dos oraciones nuevas van en un solo párrafo: el arnés cuenta bloques de prosa. Un renglón de datos (proporciones del inspector) va como `.stat`, no como párrafo.
 
 **Entrega.** `npm run build` deja el juego en `dist/`, con rutas relativas: se sirve desde cualquier
@@ -115,6 +131,23 @@ navegador (`npm run shots`) no corre ahí: se corre a mano antes de subir.
   tilde (a tiempo), triángulo ámbar con «!» (por vencer), cuadrado rojo con reloj (vencido), estallido (enojo). Caminan en
   tiempo de juego (en pausa quietos, con 6× a 6×). Con movimiento reducido o al cambiar de partida, cada uno en su lugar
   sin caminar. La escena recibe los eventos del cuadro en `render(…, events)`; `delivered` lleva `id`.
+- Reparto entre armadoras (`share` en `sim.js`, sin estado nuevo: se recalcula cada vez). Lo que va de paso hacia una sola
+  armadora cuenta como su inventario; lo que puede ir a varias o a ninguna queda suelto. Cada pedido en espera, el más urgente
+  primero, va a la armadora que más lo cubre; con empate, a la menos cargada (arma, tiene salida o ya recibió pedidos en este
+  reparto); si no, a la primera. `pendingNeed` es la suma de lo que les falta menos lo suelto; `sourceNeed` es lo mismo pero
+  sólo sobre las armadoras a las que llega la salida de esa celda (si no llega a ninguna, vale `pendingNeed`, como antes).
+  Con una sola armadora las dos dan exactamente la cuenta de antes (lo prueba `test/split.test.js`). La armadora sigue
+  eligiendo el pedido más urgente que pueda completar: el reparto sólo regula a las fuentes y al almacén.
+  Un producto de paso cuenta como suelto sólo si puede llegar a algo que lo reciba (`arrives`): lo varado en una cinta
+  sin salida no cuenta como que viaja. Es el único caso en que una sola armadora se aparta de la cuenta vieja, que ahí
+  se trababa; lo encontró la prueba de cocinas mixtas (un divisor con un costado a una cinta muerta).
+- Divisor (`splitter`, $35): recibe sólo por atrás, lleva un producto como una cinta y lo saca por turnos (`turn`) entre
+  frente, costado derecho y costado izquierdo; una salida que no recibe ese producto o está llena se saltea y el turno
+  sigue a la que lo recibió. Sin ninguna salida posible se marca sin salida como una cinta.
+- Puente (`bridge`, $60): carril este-oeste en `item` (bajo) y norte-sur en `item2` (alto); cada producto guarda en `d` hacia
+  dónde viaja y sale por el lado opuesto. No gira: queda en dirección 0.
+- Arrastre: la cinta pasa por encima de divisores y puentes (así se dibuja la segunda línea a través del puente); un toque
+  sí los reemplaza. Divisor y puente se ponen de a uno, con la dirección de `R`.
 - Ninguna máquina de estados explícita: se auditaron ocho (pedido, parrilla, armadora, sesión, gesto, HUD, cachés de la escena) y todas son chicas o derivadas. Lo que las cuida es el invariante de `test/sim.test.js` y los comentarios de fase en `sim.js` y `main.js`.
 
 **Con permiso.** Publicar el juego, crear el repositorio o hacer commits, cambiar el nombre «Burger

@@ -1,6 +1,6 @@
 // El HUD es HTML encima del lienzo 3D. Lee el estado y avisa los toques con actions.*; no toca la simulación.
 import { BUILD_ORDER, RECIPES, KINDS, CAP, QUEUE_MAX, HEARTS, LOT, deliveriesFor } from './data.js';
-import { at, cost, refund, expandCost, canExpand, pendingNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck } from './sim.js';
+import { at, cost, refund, expandCost, canExpand, sourceNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck } from './sim.js';
 import { t, LANGS, getLang } from './i18n.js';
 import { orderRisk } from './crowd.js';
 
@@ -147,17 +147,19 @@ export function createHud(root, actions, thumbs) {
     const c = at(s, x, y);
     if (!c) return [null, [t('insEmpty')]];
     const src = KINDS[c.kind], lines = [];
-    if (c.kind === 'belt') {
-      lines.push(c.item ? t('insBeltItem', { item: t('item_' + c.item.type) }) : t('insBeltEmpty'));
-      if (isStuck(s, x, y)) lines.push(`<strong class="bad">${t('insStuck', { item: t('item_' + c.item.type) })}</strong>`);
+    if (src.carries) { // cinta, divisor y puente: lo que llevan y si quedó sin salida
+      const what = item => (item ? t('item_' + item.type) : t('laneEmpty'));
+      if (c.kind === 'bridge') lines.push(t('insBridge', { h: what(c.item), v: what(c.item2) }));
+      else lines.push(c.item ? t('insBeltItem', { item: t('item_' + c.item.type) }) : t('insBeltEmpty'));
+      for (const slot of ['item', 'item2']) if (isStuck(s, x, y, slot)) lines.push(`<strong class="bad">${t('insStuck', { item: t('item_' + c[slot].type) })}</strong>`);
     } else if (c.kind === 'grill') {
       lines.push(t('insGrill', { raw: c.rawCount, rawMax: CAP.grillRaw, cooked: c.cooked, cookedMax: CAP.grillCooked }));
       lines.push(c.processing === null ? t('insGrillIdle') : c.processing > 0 ? t('insGrillBusy', { s: c.processing.toFixed(1) }) : t('insGrillFull'));
-    } else if (c.kind === 'stock') lines.push(t('insStock', { n: c.store, max: CAP.stock, need: pendingNeed(s, 'patty') }));
+    } else if (c.kind === 'stock') lines.push(t('insStock', { n: c.store, max: CAP.stock, need: sourceNeed(s, x, y) }));
     else if (c.kind === 'assembly') {
       lines.push(t('insAssembly', { ...c.inv, max: CAP.inv }));
       lines.push(c.job ? t('insAssemblyJob', { id: c.job.orderId }) : c.output ? t('insAssemblyOut') : t('insAssemblyIdle'));
-    } else if (src.emits) lines.push(src.onDemand ? t('insSourceDemand', { n: pendingNeed(s, src.emits) }) : t('insSourceContinuous'));
+    } else if (src.emits) lines.push(src.onDemand ? t('insSourceDemand', { n: sourceNeed(s, x, y) }) : t('insSourceContinuous'));
     else lines.push(t('insDispatch'));
     return [c, lines];
   }
@@ -168,11 +170,11 @@ export function createHud(root, actions, thumbs) {
     if (sel) {
       const [c, lines] = inspectorText(s, sel.x, sel.y);
       set('insTitle', c ? `${img(c.kind, 'thumb small')}${t('kindLong_' + c.kind)}` : t('insTitle', sel));
-      const sh = c && c.kind !== 'belt' && diagShares(c); // un renglón de datos, no prosa: cuánto pasó en cada estado
+      const sh = c && !KINDS[c.kind].carries && diagShares(c); // un renglón de datos, no prosa: cuánto pasó en cada estado
       set('insBody', lines.map(l => `<p>${l}</p>`).join('') + (sh ? `<div class="shares"><span class="cap">${t('sharesTitle')}</span>${
         ['work', 'blocked', 'wait', 'idle'].map(k => stat(t('share_' + k), pct(sh[k]), '')).join('')}</div>` : ''));
       const back = c ? refund(s, c.kind) : 0;
-      set('insActions', c ? `<button class="btn" data-act="rotateSelected">${ICON.rotate}<span>${t('actRotate')}</span></button>
+      set('insActions', c ? `${KINDS[c.kind].noTurn ? '' : `<button class="btn" data-act="rotateSelected">${ICON.rotate}<span>${t('actRotate')}</span></button>`}
         <button class="btn" data-act="eraseSelected">${ICON.erase}<span>${back ? t('actEraseRefund', { n: back }) : t('actErase')}</span></button>` : '');
       $('insClose').setAttribute('aria-label', t('actClose'));
     }

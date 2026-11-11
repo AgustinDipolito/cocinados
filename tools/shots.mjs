@@ -162,9 +162,9 @@ await pool(runs, async ([lang, vp]) => {
   check(where, 'miniaturas', await page.evaluate(() => { // cada herramienta y cada receta con su propio dibujo
     const srcs = [...document.querySelectorAll('#tools img, #orderAdd img, .ticket img')].map(i => i.src);
     const tools = [...document.querySelectorAll('#tools img')].map(i => i.src);
-    return tools.length === 8 && new Set(tools).size === 8 && !tools.includes(document.querySelector('.ticket img').src) && srcs.every(s => s.length > 2000);
+    return tools.length === 10 && new Set(tools).size === 10 && !tools.includes(document.querySelector('.ticket img').src) && srcs.every(s => s.length > 2000);
   }), 'dos herramientas comparten miniatura, o una usa la de una receta');
-  check(where, 'estado por omisión', first.tools === 12 && first.orders === 1 && first.money === 100, JSON.stringify(first));
+  check(where, 'estado por omisión', first.tools === 14 && first.orders === 1 && first.money === 100, JSON.stringify(first));
   await checkQueue('fila al abrir'); // el primer cliente espera unos 25 s: la fila no cambia mientras se mide
 
   if (touch) { // un dedo queda apoyado mientras se abre una hoja; después, un toque tiene que seguir eligiendo
@@ -265,6 +265,30 @@ await pool(runs, async ([lang, vp]) => {
   await page.evaluate(() => window.__bb.advance(70));
   await until('entregas del modo libre', () => window.__bb.game.stats.onTime >= 3);
   await shot('7-libre');
+
+  // Divisor y puente con clics de verdad, en pausa: se ponen de a uno, y una cinta arrastrada pasa por encima del puente sin borrarlo.
+  await click('[data-act=togglePause]');
+  await until('cartel de pausa', () => !document.querySelector('#status').hidden);
+  const cellAt = (x, y) => page.evaluate((x, y) => window.__bb.scene.project(x, y, 0.2), x, y);
+  await click('[data-act=setTool][data-arg=bridge]');
+  await clickCell(13, 2);
+  await click('[data-act=setTool][data-arg=splitter]');
+  await clickCell(15, 7);
+  await click('[data-act=setTool][data-arg=belt]');
+  for (const [i, [x, y]] of [[12, 2], [13, 2], [14, 2]].entries()) { // las coordenadas se miden justo antes de usarlas
+    const p = await cellAt(x, y);
+    if (i === 0) { await page.mouse.move(p.x, p.y); await page.mouse.down(); } else await page.mouse.move(p.x, p.y, { steps: 6 });
+  }
+  await page.mouse.up();
+  await until('divisor, puente y cinta cruzada', () => { const { sim, game } = window.__bb, k = (x, y) => sim.at(game, x, y)?.kind;
+    return k(15, 7) === 'splitter' && k(13, 2) === 'bridge' && k(12, 2) === 'belt' && k(14, 2) === 'belt' && sim.at(game, 14, 2).dir === 0; });
+  await click('[data-act=setTool][data-arg=inspect]');
+  await clickCell(13, 2);
+  await until('inspector del puente', () => window.__bb.ui.selected?.x === 13 && !document.querySelector('#inspector').hidden);
+  await shot('7b-divisor-y-puente');
+  await click('[data-act=closeInspector]');
+  await click('[data-act=togglePause]');
+
   await click('[data-act=askRestart]');
   await until('confirmación', () => document.querySelector('#dlgConfirm[open]'));
   await shot('8-confirmar');

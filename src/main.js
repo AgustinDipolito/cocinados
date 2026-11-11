@@ -2,7 +2,7 @@
 import '@fontsource/fredoka/latin-500.css';
 import '@fontsource/fredoka/latin-600.css';
 import './style.css';
-import { STEP, DIRS, QUEUE_MAX, BUILD_ORDER, RECIPES, SOURCE_OF, INGREDIENTS } from './data.js';
+import { STEP, DIRS, QUEUE_MAX, BUILD_ORDER, RECIPES, SOURCE_OF, INGREDIENTS, KINDS } from './data.js';
 import * as sim from './sim.js';
 import { createScene } from './scene.js';
 import { createHud } from './hud.js';
@@ -102,10 +102,10 @@ function netPrice(cell, kind) {
 
 function hover(cell) {
   ui.cursor = cell;
-  const cur = cell && sim.at(game, cell.x, cell.y);
-  const same = cur?.kind === ui.tool && cur.dir === ui.dir; // ya está puesta así: el fantasma sólo la taparía
+  const cur = cell && sim.at(game, cell.x, cell.y), dir = KINDS[ui.tool]?.noTurn ? 0 : ui.dir; // el puente no gira
+  const same = cur?.kind === ui.tool && cur.dir === dir; // ya está puesta así: el fantasma sólo la taparía
   const kind = BUILD_ORDER.includes(ui.tool) && !same ? ui.tool : null;
-  scene.setHover(cell, kind, ui.dir, !cell || !kind || game.mode !== 'career' || game.money >= netPrice(cell, kind));
+  scene.setHover(cell, kind, dir, !cell || !kind || game.mode !== 'career' || game.money >= netPrice(cell, kind));
 }
 
 function applyTool(cell, dir = ui.dir) {
@@ -147,8 +147,11 @@ canvas.addEventListener('pointermove', e => {
     const cell = scene.pick(game, e.clientX, e.clientY), last = gesture.last;
     if (cell && (!last || cell.x !== last.x || cell.y !== last.y)) {
       const d = last ? DIRS.findIndex(([dx, dy]) => dx === cell.x - last.x && dy === cell.y - last.y) : -1;
-      if (ui.tool === 'belt' && d >= 0) { ui.dir = d; applyTool(last, d); applyTool(cell, d); } // la cinta toma la dirección del arrastre
-      else if (ui.tool === 'belt' || ui.tool === 'erase') applyTool(cell);
+      // La cinta toma la dirección del arrastre y pasa por encima de divisores y puentes sin reemplazarlos: así se
+      // dibuja la segunda línea a través de un puente. Un toque sí los reemplaza. Divisor y puente se ponen de a uno.
+      const keep = c => { const k = sim.at(game, c.x, c.y)?.kind; return k !== 'belt' && KINDS[k]?.carries; };
+      if (ui.tool === 'belt' && d >= 0) { ui.dir = d; for (const c of [last, cell]) if (!keep(c)) applyTool(c, d); }
+      else if ((ui.tool === 'belt' && !keep(cell)) || ui.tool === 'erase') applyTool(cell);
       gesture.last = cell;
     }
   }

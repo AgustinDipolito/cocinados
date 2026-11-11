@@ -6,7 +6,7 @@ import {
   deliveriesFor, LOT, DIAG,
 } from './data.js';
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 function rand(s) { // mulberry32: el azar sale de la semilla guardada, así una partida se puede repetir
   s.seed = (s.seed + 0x6D2B79F5) | 0;
@@ -19,6 +19,7 @@ function rand(s) { // mulberry32: el azar sale de la semilla guardada, así una 
 const make = (kind, dir = 0) => ({
   kind, dir, item: null, cooldown: 0, rawCount: 0, cooked: 0, processing: null, store: 0,
   inv: { bun: 0, patty: 0, cheese: 0 }, job: null, output: null,
+  item2: null, turn: 0, // item2: carril norte-sur del puente (item lleva el este-oeste) · turn: a qué salida le toca en el divisor
   diag: { work: 0, blocked: 0, wait: 0, idle: 0 }, // segundos recientes en cada estado (ver track)
 });
 
@@ -105,15 +106,67 @@ function randomRecipe(s) {
   return keys.find(k => (r -= RECIPES[k].weight) < 0) ?? keys[0];
 }
 
-/** Cuánto falta fabricar de un ingrediente para los pedidos en espera, descontando lo que ya viaja. */
-export function pendingNeed(s, kind) {
-  let need = 0;
-  for (const o of s.orders) if (o.status === 'pending') need += RECIPES[o.recipeKey][kind] || 0;
-  for (const c of s.cells) {
-    if (!c) continue;
-    if (c.kind === 'assembly') need -= c.inv[kind] || 0;
-    if (c.kind === 'belt' && c.item && c.item.type === kind) need--;
+const ZERO = () => ({ bun: 0, patty: 0, cheese: 0 });
+
+/**
+ * El reparto en el papel de los pedidos en espera entre las armadoras (no se guarda: se recalcula cada vez).
+ * Lo que va de paso hacia una sola armadora cuenta como inventario de ella; lo que todavía puede ir a varias, o a
+ * ninguna máquina pero sí a algo que lo recibe, queda suelto (loose); lo que no llega a nada que lo reciba
+ * no cuenta (si no, un pan varado en una cinta sin salida tapaba para siempre el que faltaba). Cada pedido en
+ * espera, el más urgente primero, va a la armadora que más lo cubre con lo que le queda; con empate, a la menos
+ * cargada (la que ya arma o recibió pedidos en este reparto), y si no a la primera. Lo que le falta a cada una queda en short; los pedidos sin ninguna armadora suman en orphan.
+ */
+function share(s) {
+  const asm = new Map(), loose = ZERO(), orphan = ZERO();
+  s.cells.forEach((c, i) => { if (c?.kind === 'assembly') asm.set(i, { inv: { ...c.inv }, load: c.job || c.output ? 1 : 0, short: ZERO() }); });
+  s.cells.forEach((c, i) => {
+    if (!c || !KINDS[c.kind].carries) return;
+    for (const item of [c.item, c.item2]) {
+      if (!item || !INGREDIENTS.includes(item.type)) continue;
+      const to = new Set(), x = i % s.W, y = (i - x) / s.W;
+      for (const d of exits(c, item.d)) reach(s, x, y, d, to);
+      if (to.size === 1) asm.get([...to][0]).inv[item.type]++;
+      else if (exits(c, item.d).some(d => arrives(s, x, y, d, item.type))) loose[item.type]++; // lo que no llega a nada que lo reciba no viaja
+    }
+  });
+  for (const o of s.orders.filter(o => o.status === 'pending').sort((a, b) => a.due - b.due)) {
+    const r = RECIPES[o.recipeKey], cover = a => INGREDIENTS.reduce((n, i) => n + Math.min(a.inv[i], r[i]), 0);
+    let best = null;
+    for (const a of asm.values()) if (!best || cover(a) > cover(best) || (cover(a) === cover(best) && a.load < best.load)) best = a;
+    for (const i of INGREDIENTS) {
+      if (!best) { orphan[i] += r[i]; continue; }
+      best.short[i] += Math.max(0, r[i] - best.inv[i]);
+      best.inv[i] = Math.max(0, best.inv[i] - r[i]);
+    }
+    if (best) best.load++;
   }
+  return { asm, loose, orphan };
+}
+
+/**
+ * Cuánto falta fabricar de un ingrediente para los pedidos en espera, descontando lo que ya viaja: lo que les
+ * falta a las armadoras según el reparto (share), menos lo suelto. Con una sola armadora da lo mismo que restar
+ * su inventario y todo lo que va en cinta. Sumar el inventario de todas trababa: media receta en cada una parecía una entera.
+ */
+export function pendingNeed(s, kind) {
+  const { asm, loose, orphan } = share(s);
+  let need = orphan[kind] - loose[kind];
+  for (const a of asm.values()) need += a.short[kind];
+  return Math.max(0, need);
+}
+
+/**
+ * Cuánto tiene que soltar la fuente o el almacén de (x, y): lo que les falta a las armadoras a las que llega su
+ * salida, menos lo suelto. Así una línea no le manda pan a su armadora mientras el pedido espera en la de al lado.
+ * Si su salida no llega a ninguna armadora, vale la necesidad de toda la cocina, como antes.
+ */
+export function sourceNeed(s, x, y) {
+  const c = at(s, x, y), kind = c.kind === 'stock' ? 'patty' : KINDS[c.kind].emits;
+  const to = reach(s, x, y, c.dir, new Set());
+  if (!to.size) return pendingNeed(s, kind);
+  const { asm, loose } = share(s);
+  let need = -loose[kind];
+  for (const i of to) need += asm.get(i).short[kind];
   return Math.max(0, need);
 }
 
@@ -157,14 +210,14 @@ function expireOrders(s) {
 
 // ---------- construir ----------
 
-const holdsStuff = c => !!(c.item || c.store || c.cooked || c.rawCount || c.output || c.job || c.processing !== null
+const holdsStuff = c => !!(c.item || c.item2 || c.store || c.cooked || c.rawCount || c.output || c.job || c.processing !== null
   || c.inv.bun || c.inv.patty || c.inv.cheese);
 
 /** Lo que había adentro se pierde; si era la hamburguesa de un pedido, el pedido vuelve a la cola. */
 function loseContents(s, c) {
   if (!holdsStuff(c)) return;
   s.stats.waste++;
-  for (const id of [c.item?.orderId, c.output?.orderId, c.job?.orderId]) {
+  for (const id of [c.item?.orderId, c.item2?.orderId, c.output?.orderId, c.job?.orderId]) {
     const o = id && s.orders.find(o => o.id === id);
     if (o) o.status = 'pending';
   }
@@ -173,6 +226,7 @@ function loseContents(s, c) {
 /** Devuelve { ok } o { ok:false, reason } con reason 'same' | 'money' | 'out'. */
 export function place(s, x, y, kind, dir = 0) {
   if (!valid(s, x, y) || s.over) return { ok: false, reason: 'out' };
+  if (KINDS[kind].noTurn) dir = 0; // el puente no tiene frente: girarlo no cambia nada
   const cur = at(s, x, y);
   if (cur && cur.kind === kind) { // misma máquina: sólo se gira, gratis y sin perder lo que tiene
     if (cur.dir === dir) return { ok: false, reason: 'same' };
@@ -210,9 +264,11 @@ export function expand(s) {
 
 // ---------- máquinas ----------
 
-const accepts = (cell, type) => {
+/** d: hacia dónde viaja el producto al entrar. El divisor sólo recibe por atrás. */
+const accepts = (cell, type, d) => {
   switch (cell?.kind) {
-    case 'belt': case 'dispatch': return true;
+    case 'belt': case 'bridge': case 'dispatch': return true;
+    case 'splitter': return d === cell.dir;
     case 'grill': return type === 'raw';
     case 'stock': return type === 'patty';
     case 'assembly': return INGREDIENTS.includes(type);
@@ -220,13 +276,15 @@ const accepts = (cell, type) => {
   }
 };
 
-function receive(s, cell, x, y, item, fx, fy) {
-  if (!accepts(cell, item.type)) return false;
+function receive(s, cell, x, y, item, fx, fy, d) {
+  if (!accepts(cell, item.type, d)) return false;
   switch (cell.kind) {
-    case 'belt':
-      if (cell.item) return false;
-      cell.item = Object.assign(item, { fx, fy, t0: s.time, readyAt: s.time + BELT_TIME });
+    case 'belt': case 'splitter': case 'bridge': { // el puente tiene dos carriles: cada producto va al de su eje
+      const slot = cell.kind === 'bridge' && d % 2 ? 'item2' : 'item';
+      if (cell[slot]) return false;
+      cell[slot] = Object.assign(item, { fx, fy, d, t0: s.time, readyAt: s.time + BELT_TIME });
       return true;
+    }
     case 'grill': if (cell.rawCount >= CAP.grillRaw) return false; cell.rawCount++; return true;
     case 'stock': if (cell.store >= CAP.stock) return false; cell.store++; return true;
     case 'assembly': if (cell.inv[item.type] >= CAP.inv) return false; cell.inv[item.type]++; return true;
@@ -237,17 +295,60 @@ function receive(s, cell, x, y, item, fx, fy) {
   }
 }
 
-function send(s, x, y, c, item) {
-  const [dx, dy] = DIRS[c.dir], nx = x + dx, ny = y + dy, next = at(s, nx, ny);
-  return next ? receive(s, next, nx, ny, item, x, y) : false;
+function send(s, x, y, c, item, d = c.dir) {
+  const [dx, dy] = DIRS[d], nx = x + dx, ny = y + dy, next = at(s, nx, ny);
+  return next ? receive(s, next, nx, ny, item, x, y, d) : false;
 }
 
-/** Un producto quieto en una cinta que apunta a algo que nunca lo va a recibir. */
-export function isStuck(s, x, y) {
-  const c = at(s, x, y);
-  if (c?.kind !== 'belt' || !c.item || s.time - c.item.readyAt < STUCK_AFTER) return false;
-  const [dx, dy] = DIRS[c.dir];
-  return !accepts(at(s, x + dx, y + dy), c.item.type);
+const SPLIT = [0, 1, 3]; // salidas del divisor, relativas a su dirección: frente, costado derecho, costado izquierdo
+/** Por dónde puede seguir un producto que entró a una celda de paso viajando hacia d, en el orden en que lo intenta. */
+function exits(c, d) {
+  if (c.kind === 'bridge') return [d]; // sigue derecho por su carril y sale por el lado opuesto
+  if (c.kind === 'splitter') return [0, 1, 2].map(k => (c.dir + SPLIT[(c.turn + k) % 3]) % 4);
+  return [c.dir];
+}
+
+/** Si lo que sale de (x, y) hacia d puede llegar por celdas de paso a una máquina que reciba `type`. */
+function arrives(s, x, y, d, type, seen = new Set()) {
+  const nx = x + DIRS[d][0], ny = y + DIRS[d][1], c = at(s, nx, ny), i = ny * s.W + nx;
+  if (!c || !KINDS[c.kind].carries) return accepts(c, type, d);
+  if (!accepts(c, type, d) || seen.has(i * 4 + d)) return false;
+  seen.add(i * 4 + d);
+  return exits(c, d).some(e => arrives(s, nx, ny, e, type, seen));
+}
+
+/** Agrega a `to` el índice de cada armadora a la que puede llegar lo que sale de (x, y) hacia d por celdas de paso. */
+function reach(s, x, y, d, to, seen = new Set()) {
+  const nx = x + DIRS[d][0], ny = y + DIRS[d][1], c = at(s, nx, ny), i = ny * s.W + nx;
+  if (c?.kind === 'assembly') to.add(i);
+  if (!c || !KINDS[c.kind].carries || !accepts(c, null, d) || seen.has(i * 4 + d)) return to;
+  seen.add(i * 4 + d);
+  for (const e of exits(c, d)) reach(s, nx, ny, e, to, seen);
+  return to;
+}
+
+/**
+ * Mueve lo que lleva una celda de paso (slot 'item', o 'item2' en el puente). El divisor reparte por turnos:
+ * una salida que no recibe ese producto o que está llena en este paso se saltea, y el turno pasa a la que
+ * sigue de la que lo recibió.
+ */
+function carry(s, x, y, c, slot) {
+  const item = c[slot];
+  if (!item || item.readyAt > s.time) return;
+  const out = exits(c, item.d);
+  for (let k = 0; k < out.length; k++) {
+    if (!send(s, x, y, c, item, out[k])) continue;
+    c[slot] = null;
+    if (c.kind === 'splitter') c.turn = (c.turn + k + 1) % 3;
+    return;
+  }
+}
+
+/** Un producto quieto en una celda de paso que no tiene ninguna salida que lo vaya a recibir nunca. */
+export function isStuck(s, x, y, slot = 'item') {
+  const c = at(s, x, y), item = c?.[slot];
+  if (!item || s.time - item.readyAt < STUCK_AFTER) return false;
+  return !exits(c, item.d).some(d => accepts(at(s, x + DIRS[d][0], y + DIRS[d][1]), item.type, d));
 }
 
 const canMake = (c, r) => INGREDIENTS.every(i => c.inv[i] >= r[i]);
@@ -292,11 +393,11 @@ function output(s, x, y, c, dt) {
   const out = type => send(s, x, y, c, { id: s.itemId++, type });
   if (src.emits) {
     const type = src.emits;
-    if (src.onDemand && pendingNeed(s, type) <= 0) return;
+    if (src.onDemand && sourceNeed(s, x, y) <= 0) return;
     if (out(type)) c.cooldown = src.every;
   } else if (c.kind === 'grill' && c.cooked > 0) {
     if (out('patty')) { c.cooked--; c.cooldown = TIMES.grillOut; }
-  } else if (c.kind === 'stock' && c.store > 0 && pendingNeed(s, 'patty') > 0) {
+  } else if (c.kind === 'stock' && c.store > 0 && sourceNeed(s, x, y) > 0) {
     if (out('patty')) { c.store--; c.cooldown = TIMES.stockOut; }
   } else if (c.kind === 'assembly' && c.output) {
     if (send(s, x, y, c, c.output)) { c.output = null; c.cooldown = TIMES.assemblyOut; }
@@ -323,7 +424,9 @@ export function step(s, dt) {
   // eso es lo que impide que cruce dos celdas en un mismo paso, sea cual sea el orden de recorrido.
   for (let y = 0; y < s.H; y++) for (let x = 0; x < s.W; x++) {
     const c = at(s, x, y);
-    if (c?.kind === 'belt' && c.item && c.item.readyAt <= s.time && send(s, x, y, c, c.item)) c.item = null;
+    if (!c || !KINDS[c.kind].carries) continue;
+    carry(s, x, y, c, 'item');
+    if (c.kind === 'bridge') carry(s, x, y, c, 'item2');
   }
   for (let y = 0; y < s.H; y++) for (let x = 0; x < s.W; x++) {
     const c = at(s, x, y);
@@ -339,11 +442,11 @@ export function step(s, dt) {
 //   'blocked' tiene algo para sacar y el destino no lo recibe
 //   'wait'    le falta insumo habiendo pedidos que lo piden
 //   'idle'    libre
-// Un producto quieto en una celda (cinta) está bloqueado; una cinta vacía está libre.
-function cellState(s, c, need) {
-  if (c.item) return c.item.readyAt > s.time ? 'work' : 'blocked';
+// Un producto quieto en una celda de paso (cinta, divisor, puente) está bloqueado; una vacía está libre.
+function cellState(s, c, need, own) { // need(ingrediente): lo que pide la cocina · own(): lo que tiene que soltar esta celda (sourceNeed)
+  if (c.item || c.item2) return (c.item && c.item.readyAt <= s.time) || (c.item2 && c.item2.readyAt <= s.time) ? 'blocked' : 'work';
   switch (c.kind) {
-    case 'belt': return 'idle';
+    case 'belt': case 'splitter': case 'bridge': return 'idle';
     case 'grill':
       if (c.processing > 0) return 'work';
       if (c.processing === 0 || (c.cooked > 0 && c.cooldown <= 0)) return 'blocked';
@@ -351,7 +454,7 @@ function cellState(s, c, need) {
       return need('patty') > 0 ? 'wait' : 'idle';
     case 'stock':
       if (c.cooldown > 0) return 'work';
-      if (need('patty') > 0) return c.store > 0 ? 'blocked' : 'wait';
+      if (own() > 0) return c.store > 0 ? 'blocked' : 'wait';
       return 'idle';
     case 'assembly':
       if (c.output && c.cooldown <= 0) return 'blocked';
@@ -362,17 +465,18 @@ function cellState(s, c, need) {
   const src = KINDS[c.kind];
   if (!src?.emits) return 'idle';
   if (c.cooldown > 0) return 'work';
-  return !src.onDemand || need(src.emits) > 0 ? 'blocked' : 'idle';
+  return !src.onDemand || own() > 0 ? 'blocked' : 'idle';
 }
 
 /** Acumulado reciente: todo decae con DIAG.tau y el estado de este paso suma dt. */
 function track(s, dt) {
   const keep = Math.exp(-dt / DIAG.tau), needs = {}, need = k => (needs[k] ??= pendingNeed(s, k));
-  for (const c of s.cells) {
+  for (let i = 0; i < s.cells.length; i++) {
+    const c = s.cells[i];
     if (!c) continue;
     const d = c.diag;
     d.work *= keep; d.blocked *= keep; d.wait *= keep; d.idle *= keep;
-    d[cellState(s, c, need)] += dt;
+    d[cellState(s, c, need, () => sourceNeed(s, i % s.W, Math.floor(i / s.W)))] += dt;
   }
 }
 
@@ -400,7 +504,7 @@ export function upstreamBlocked(s, x, y) {
 export function bottleneck(s) {
   let best = null;
   for (let i = 0; i < s.cells.length; i++) {
-    const c = s.cells[i], shares = c && c.kind !== 'belt' && diagShares(c);
+    const c = s.cells[i], shares = c && !KINDS[c.kind].carries && diagShares(c);
     if (!shares) continue;
     const x = i % s.W, y = Math.floor(i / s.W), cand = { x, y, kind: c.kind, shares, upstream: upstreamBlocked(s, x, y) };
     const w = shares.work, bw = best?.shares.work;

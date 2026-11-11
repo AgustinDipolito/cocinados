@@ -15,8 +15,11 @@ export const CAP = { grillRaw: 3, grillCooked: 2, stock: 8, inv: 8 };
 export const TIMES = { cook: 5, assemble: 4, grillOut: 0.42, stockOut: 0.52, assemblyOut: 0.55 };
 
 // emits: qué saca una fuente · every: cada cuántos segundos · onDemand: sólo si hay pedidos que lo pidan
+// carries: lleva productos de paso como una cinta (no es máquina para el diagnóstico) · noTurn: girarla no cambia nada
 export const KINDS = {
-  belt:     { cost: 2 },
+  belt:     { cost: 2, carries: true },
+  splitter: { cost: 35, carries: true },
+  bridge:   { cost: 60, carries: true, noTurn: true },
   raw:      { cost: 30, emits: 'raw', every: 2.1 },
   bun:      { cost: 25, emits: 'bun', every: 2.0, onDemand: true },
   cheese:   { cost: 25, emits: 'cheese', every: 2.3, onDemand: true },
@@ -25,7 +28,7 @@ export const KINDS = {
   assembly: { cost: 90 },
   dispatch: { cost: 50 },
 };
-export const BUILD_ORDER = ['belt', 'raw', 'bun', 'cheese', 'grill', 'stock', 'assembly', 'dispatch'];
+export const BUILD_ORDER = ['belt', 'splitter', 'bridge', 'raw', 'bun', 'cheese', 'grill', 'stock', 'assembly', 'dispatch'];
 
 // Qué fuente hace falta para cada ingrediente de una receta.
 export const SOURCE_OF = { bun: 'bun', patty: 'raw', cheese: 'cheese' };

@@ -3,11 +3,11 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { BELT_TIME, BUILD_ORDER, RECIPES, DIAG } from './data.js';
 import { isStuck, diagShares } from './sim.js';
-import { C, beltTexture, alertTexture, jamTexture, buildMachine, buildItem, buildLot, buildGhost, tileFrame, burger, buildCustomer } from './models.js';
+import { C, BRIDGE_TOP, beltTexture, alertTexture, jamTexture, buildMachine, buildItem, buildLot, buildGhost, tileFrame, burger, buildCustomer } from './models.js';
 import { curb, newCrowd, stepCrowd } from './crowd.js';
 
 const PITCH = THREE.MathUtils.degToRad(54); // cuánto mira hacia abajo la cámara
-const SURFACE = { belt: 0.185, assembly: 0.47 }; // altura a la que apoya un producto
+const SURFACE = { belt: 0.185, assembly: 0.47, bridge: BRIDGE_TOP + 0.005 }; // altura a la que apoya un producto (bridge: carril alto del puente)
 const smooth = p => p * p * (3 - 2 * p);
 
 export function createScene(canvas) {
@@ -107,15 +107,18 @@ export function createScene(canvas) {
       const c = s.cells[i];
       if (!c) continue;
       const x = i % s.W, y = Math.floor(i / s.W);
-      if (c.item) {
-        const p = smooth(THREE.MathUtils.clamp((t - c.item.t0) / BELT_TIME, 0, 1));
-        const px = THREE.MathUtils.lerp(c.item.fx, x, p) + 0.5, pz = THREE.MathUtils.lerp(c.item.fy, y, p) + 0.5;
-        show(c.item, px, SURFACE.belt, pz);
-        if (isStuck(s, x, y)) {
+      for (const slot of ['item', 'item2']) { // item2: el carril alto del puente, que sube mientras entra
+        const it = c[slot];
+        if (!it) continue;
+        const p = smooth(THREE.MathUtils.clamp((t - it.t0) / BELT_TIME, 0, 1));
+        const px = THREE.MathUtils.lerp(it.fx, x, p) + 0.5, pz = THREE.MathUtils.lerp(it.fy, y, p) + 0.5;
+        const py = slot === 'item2' ? THREE.MathUtils.lerp(SURFACE.belt, SURFACE.bridge, p) : SURFACE.belt;
+        show(it, px, py, pz);
+        if (isStuck(s, x, y, slot)) {
           let a = alerts.children[alertN++];
           if (!a) { a = new THREE.Sprite(new THREE.SpriteMaterial({ map: alertTexture, depthTest: false })); a.scale.setScalar(0.5); alerts.add(a); }
           a.visible = true;
-          a.position.set(px, 0.95, pz);
+          a.position.set(px, py + 0.77, pz);
         }
       }
       if (c.output) show(c.output, x + 0.54, SURFACE.assembly, y + 0.48);
@@ -294,7 +297,7 @@ export function createScene(canvas) {
       out[name] = canvas.toDataURL('image/png');
       stage.remove(obj);
     };
-    for (const kind of BUILD_ORDER) shoot(kind, buildMachine(kind), kind === 'belt' ? 0.1 : 0.5, kind === 'belt' ? 0.72 : 0.95);
+    for (const kind of BUILD_ORDER) { const low = kind === 'belt' || kind === 'splitter'; shoot(kind, buildMachine(kind), low ? 0.1 : 0.5, low ? 0.72 : 0.95); }
     for (const k in RECIPES) shoot('recipe_' + k, burger(k), 0.14, 0.27);
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     resize();
