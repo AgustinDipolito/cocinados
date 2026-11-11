@@ -31,16 +31,20 @@ de a una cosa y exige que `npm test` se ponga rojo.
 
 **Componentes.** `box`/`cyl`/`stack`/`progressBar`/`outArrow` en `src/models.js` para armar modelos;
 `buildMachine(kind)`, `buildItem(item)`, `burger(receta)`. En el HUD (`src/hud.js`): `stat`, `btn`,
-`tool`, `img` (miniatura), `confirm(título, consecuencia, acción)`, `toast`, `floater`.
+`tool`, `img` (miniatura), `confirm(título, consecuencia, acción)`, `toast`, `floater`, `pct` (proporción
+como «62 %»). Diagnóstico en `src/sim.js`: `diagShares(celda)` (proporciones `{ work, blocked, wait, idle }`
+o null), `bottleneck(s)` (`{ x, y, kind, shares, upstream }` o null), `upstreamBlocked(s, x, y)`, `lost(s)`
+(perdidos por plazo más por cola llena). En la escena, `setJams(on)` y `shownJams()` (para el arnés).
 
 **Idiomas.** Español (origen, voseo, sin exclamaciones) e inglés. Mecanismo: `STRINGS` y `t()` en
 `src/i18n.js`; `t()` tira error si la clave no existe y la prueba compara idiomas.
 
 **Arnés.** `npm run check` = `npm test` (1 s) → `npm run build` (1 s) → `npm run shots` (unos 9 min:
-6 corridas, 48 capturas en `shots/`, WebGL por software). `npm run shots -- phone-es` corre una sola.
+6 corridas, 54 capturas en `shots/`, entre ellas la capa de atascos prendida con un clic, WebGL por software). `npm run shots -- phone-es` corre una sola.
 
 **Inscripciones.** Una máquina nueva se anota en: `KINDS` y `BUILD_ORDER` (`data.js`); `accepts`,
-`receive`, `process` u `output` (`sim.js`); `builders` (`models.js`); `SURFACE` si apoya productos
+`receive`, `process` u `output` (`sim.js`); su caso en `cellState` (`sim.js`: cuándo trabaja, está
+bloqueada, espera o está libre) y, si lleva productos como una cinta, la exclusión en `bottleneck`; `builders` (`models.js`); `SURFACE` si apoya productos
 (`scene.js`); `inspectorText` (`hud.js`); `kind_`, `kindLong_`, `kindHint_` en los dos idiomas.
 Una receta: `RECIPES`, `SANDBOX_DEADLINE` y `recipe_`. Un ingrediente: `INGREDIENTS`, `SOURCE_OF`,
 `buildItem`, `item_` y la familia en `test/i18n.test.js`.
@@ -70,6 +74,9 @@ y se lee en el HUD (`hud.js`) o en la escena (`scene.js`). Lo que no es del jueg
 - En Chrome el segundo Esc cierra una hoja aunque se cancele el primero: el inicio se cerraba y no quedaba cómo empezar. Una hoja que no se puede cerrar se vuelve a abrir en su `close`.
 - Una prueba de toque midió las coordenadas antes de que el primer toque corriera la vista, y culpó al juego. Las coordenadas se miden justo antes de usarlas.
 - Una espera sobre un juego en pausa no llega nunca. La condición y lo que depende de ella van en el mismo instante.
+- Un bucle `while (s.time < T)` sobre una partida que cierra no termina: `step` ya no avanza. Todo bucle de prueba lleva `!s.over`.
+- Los campos numéricos que se actualizan en cada paso se escriben por nombre (`d.work *= k`), no con `for…in`: el acceso por clave costaba el doble.
+- En la hoja de cierre, dos oraciones nuevas van en un solo párrafo: el arnés cuenta bloques de prosa. Un renglón de datos (proporciones del inspector) va como `.stat`, no como párrafo.
 
 **Entrega.** `npm run build` deja el juego en `dist/`, con rutas relativas: se sirve desde cualquier
 carpeta. Las capturas quedan en `shots/`. El repositorio está en GitHub (`origin`). `.github/workflows/deploy.yml`
@@ -86,6 +93,14 @@ navegador (`npm run shots`) no corre ahí: se corre a mano antes de subir.
 - El aviso rojo en una cinta es sólo para un producto sin salida, no para una cinta frenada por una máquina llena.
 - La armadora elige el pedido más urgente que pueda completar (regla del prototipo): una doble puede esperar mientras salen simples.
 - Sin sonido por ahora.
+- Diagnóstico de cuello de botella: cada celda lleva `diag` (segundos recientes en trabajo, bloqueo, espera y
+  libre), que decae con `DIAG.tau` = 60 s y se actualiza al final de `step` leyendo lo que quedó en la celda.
+  Se guarda, girar lo conserva, reemplazar o borrar lo pierde. El cuello es la máquina (no cinta) con más
+  trabajo; con empate (`DIAG.tie`) gana la que tiene más bloqueo aguas arriba; bajo `DIAG.minWork`, ninguna.
+  Una línea cortada aguas abajo señala igual a la que más trabajó: la causa la muestra la capa de atascos.
+- La capa de atascos es vista (`ui.jams`, no se guarda): rombo ámbar con dos barras sobre cada celda con
+  bloqueo desde `DIAG.jam`. El botón va en la barra de arriba como secundario (en compacta, dentro de «más»).
+- `stats.expired` cuenta sólo plazos vencidos y `stats.turnedAway` la cola llena; «Perdidos» muestra `lost(s)`.
 - Ninguna máquina de estados explícita: se auditaron ocho (pedido, parrilla, armadora, sesión, gesto, HUD, cachés de la escena) y todas son chicas o derivadas. Lo que las cuida es el invariante de `test/sim.test.js` y los comentarios de fase en `sim.js` y `main.js`.
 
 **Con permiso.** Publicar el juego, crear el repositorio o hacer commits, cambiar el nombre «Burger

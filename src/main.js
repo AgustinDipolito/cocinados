@@ -18,7 +18,7 @@ function applyLang(l) { setLang(l); canvas.setAttribute('aria-label', t('boardLa
 applyLang(store.get('lang') ?? (navigator.language.startsWith('es') ? 'es' : 'en'));
 
 const scene = createScene(canvas);
-const ui = { tool: 'inspect', dir: 0, selected: null, cursor: null, playing: true, speed: 1 };
+const ui = { tool: 'inspect', dir: 0, selected: null, cursor: null, playing: true, speed: 1, jams: false };
 let game = sim.newGame('career', 1), started = false, acc = 0;
 
 const loadSave = mode => sim.deserialize(store.get('save.' + mode) ?? '');
@@ -31,6 +31,7 @@ const actions = {
   rotate() { ui.dir = (ui.dir + 1) % 4; },
   togglePause() { ui.playing = !ui.playing; },
   cycleSpeed() { ui.speed = SPEEDS[(SPEEDS.indexOf(ui.speed) + 1) % SPEEDS.length]; },
+  toggleJams() { ui.jams = !ui.jams; scene.setJams(ui.jams); },
   addOrder(key) { sim.addOrder(game, key, true); },
   setAuto(on) { game.autoOrders = on; },
   expand() { const r = sim.expand(game); if (r.reason === 'money') noMoney(sim.expandCost(game)); },

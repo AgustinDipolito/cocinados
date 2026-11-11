@@ -41,6 +41,11 @@ export const RECIPES = {
 export const SANDBOX_DEADLINE = { classic: 85, cheese: 98, double: 112 };
 export const SANDBOX_INTERVAL = 17;
 
+// Diagnóstico de cuello de botella. tau: segundos en que el acumulado de cada celda decae a 1/e (pesa más
+// el último minuto) · tie: diferencia de trabajo que se toma como empate · minWork: con menos trabajo que
+// esto no hay cuello de botella · jam: proporción bloqueada desde la que la capa de atascos marca la celda.
+export const DIAG = { tau: 60, tie: 0.02, minWork: 0.05, jam: 0.5 };
+
 export const START_MONEY = 100;
 export const orderInterval = level => Math.max(3.5, 13 - 2.5 * (level - 1)); // segundos entre clientes
 export const deliveriesFor = level => level * level + 3 * level; // entregas acumuladas para pasar de `level`

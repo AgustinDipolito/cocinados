@@ -93,6 +93,15 @@ export const alertTexture = spriteTexture((g, s) => {
   g.fillStyle = '#fff'; g.font = `700 ${s * 0.66}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText('!', s / 2, s * 0.54);
 });
+/** Marca de la capa de atascos: rombo ámbar con dos barras de «detenido». Forma distinta del aviso redondo. */
+export const jamTexture = spriteTexture((g, s) => {
+  const r = s * 0.44, c = s / 2;
+  g.beginPath(); g.moveTo(c, c - r); g.lineTo(c + r, c); g.lineTo(c, c + r); g.lineTo(c - r, c); g.closePath();
+  g.fillStyle = '#e8941a'; g.fill();
+  g.lineWidth = 8; g.lineJoin = 'round'; g.strokeStyle = '#2a1f17'; g.stroke();
+  g.fillStyle = '#2a1f17';
+  for (const x of [c - s * 0.11, c + s * 0.04]) g.fillRect(x, c - s * 0.15, s * 0.07, s * 0.3);
+});
 
 // ---------- comida ----------
 const PATTY_H = 0.07, CHEESE_H = 0.025, BUN_H = 0.05;

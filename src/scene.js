@@ -1,9 +1,9 @@
 // La escena 3D: dibuja el estado de la simulación, no decide nada del juego.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { BELT_TIME, BUILD_ORDER, RECIPES } from './data.js';
-import { isStuck } from './sim.js';
-import { C, beltTexture, alertTexture, buildMachine, buildItem, buildLot, buildGhost, tileFrame, burger } from './models.js';
+import { BELT_TIME, BUILD_ORDER, RECIPES, DIAG } from './data.js';
+import { isStuck, diagShares } from './sim.js';
+import { C, beltTexture, alertTexture, jamTexture, buildMachine, buildItem, buildLot, buildGhost, tileFrame, burger } from './models.js';
 
 const PITCH = THREE.MathUtils.degToRad(54); // cuánto mira hacia abajo la cámara
 const SURFACE = { belt: 0.185, assembly: 0.47 }; // altura a la que apoya un producto
@@ -36,8 +36,9 @@ export function createScene(canvas) {
   const camera = new THREE.PerspectiveCamera(32, 1, 0.5, 300);
   const view = { tx: 0, tz: 0, dist: 20, fitDist: 20 };
 
-  const world = new THREE.Group(), itemLayer = new THREE.Group(), alerts = new THREE.Group();
-  scene.add(world, itemLayer, alerts);
+  const world = new THREE.Group(), itemLayer = new THREE.Group(), alerts = new THREE.Group(), jams = new THREE.Group();
+  scene.add(world, itemLayer, alerts, jams);
+  let jamsOn = false;
   const selectFrame = tileFrame(C.select), hoverFrame = tileFrame(C.hover);
   scene.add(selectFrame, hoverFrame);
 
@@ -121,6 +122,19 @@ export function createScene(canvas) {
     for (const [id, o] of items) if (!seen.has(id)) { itemLayer.remove(o); items.delete(id); }
   }
 
+  /** Capa de atascos: una marca sobre cada celda que pasó trabada al menos DIAG.jam del último minuto. */
+  function syncJams(s) {
+    let n = 0;
+    if (jamsOn) for (let i = 0; i < s.cells.length; i++) {
+      if ((diagShares(s.cells[i])?.blocked ?? 0) < DIAG.jam) continue;
+      let m = jams.children[n++];
+      if (!m) { m = new THREE.Sprite(new THREE.SpriteMaterial({ map: jamTexture, depthTest: false })); m.scale.setScalar(0.55); m.renderOrder = 7; jams.add(m); }
+      m.visible = true;
+      m.position.set((i % s.W) + 0.5, 1.35, Math.floor(i / s.W) + 0.5);
+    }
+    for (let i = n; i < jams.children.length; i++) jams.children[i].visible = false;
+  }
+
   /** Dibuja un cuadro. t es el tiempo de simulación con su fracción, para que el movimiento no salte. */
   function render(s, t, dt, playing) {
     if (s !== shown) { // otra partida: sus productos repiten números, así que no se reusa ningún modelo
@@ -132,6 +146,7 @@ export function createScene(canvas) {
     if (key !== lotKey) { lotKey = key; rebuildLot(s); }
     syncMachines(s, t, playing);
     syncItems(s, t);
+    syncJams(s);
     if (playing && !reducedMotion.matches) beltTexture.offset.x -= dt / BELT_TIME; // con movimiento reducido la goma queda quieta
     renderer.render(scene, camera);
   }
@@ -262,5 +277,8 @@ export function createScene(canvas) {
   placeCamera();
   /** Para las pruebas: qué modelo se está dibujando para cada producto. */
   const shownItems = () => [...items].map(([id, o]) => ({ id, type: o.userData.type }));
-  return { render, pick, project, pan, panPixels, zoom, lookAt, fit, resize, setSelected, setHover, thumbnails, shownItems };
+  /** Para las pruebas: las celdas que la capa de atascos está marcando. */
+  const shownJams = () => jams.children.filter(m => m.visible).map(m => ({ x: Math.floor(m.position.x), y: Math.floor(m.position.z) }));
+  const setJams = on => { jamsOn = on; };
+  return { render, pick, project, pan, panPixels, zoom, lookAt, fit, resize, setSelected, setHover, thumbnails, shownItems, shownJams, setJams };
 }

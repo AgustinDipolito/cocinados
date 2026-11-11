@@ -11,6 +11,7 @@ const code = readdirSync('src').filter(f => f.endsWith('.js') && f !== 'i18n.js'
 const families = {
   kind_: Object.keys(KINDS), kindLong_: Object.keys(KINDS), kindHint_: Object.keys(KINDS),
   recipe_: Object.keys(RECIPES), item_: ['raw', 'patty', 'bun', 'cheese', 'burger'], dir: ['0', '1', '2', '3'],
+  share_: ['work', 'blocked', 'wait', 'idle'],
 };
 const familyKeys = Object.entries(families).flatMap(([p, list]) => list.map(k => p + k));
 

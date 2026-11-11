@@ -214,9 +214,34 @@ await pool(runs, async ([lang, vp]) => {
   check(where, 'ampliar sin dinero', await page.evaluate(() => window.__bb.game.money === 10 && window.__bb.game.expansions === 1), 'cobró o amplió sin plata');
   await shot('5-ampliado-y-sin-dinero');
 
+  // Capa de atascos: sin despacho la línea se traba; el botón (en compacta, dentro de «más») marca esas celdas.
+  await page.evaluate(() => { const b = window.__bb; b.sim.erase(b.game, 10, 3); b.game.hearts = 5; b.advance(60); });
+  await click('[data-act=togglePause]');
+  await until('cartel de pausa', () => !document.querySelector('#status').hidden);
+  const compact = await page.evaluate(() => getComputedStyle(document.querySelector('[data-act=toggleMore]')).display !== 'none');
+  if (compact) { await click('[data-act=toggleMore]'); await until('barra de arriba desplegada', () => document.querySelector('#top.more')); }
+  check(where, 'atascos', await page.evaluate(() => { const r = document.querySelector('[data-act=toggleJams]').getBoundingClientRect(); return r.width > 0 && r.height > 0; }), 'el botón de atascos no se ve');
+  await click('[data-act=toggleJams]');
+  await until('capa de atascos prendida', () => window.__bb.ui.jams && document.querySelector('[data-act=toggleJams]').getAttribute('aria-pressed') === 'true');
+  await frames();
+  check(where, 'atascos', await page.evaluate(() => { // marca exactamente las celdas trabadas, y alguna hay
+    const { game, sim, scene } = window.__bb, key = c => `${c.x},${c.y}`;
+    const want = game.cells.map((c, i) => ({ c, x: i % game.W, y: Math.floor(i / game.W) })).filter(({ c }) => (sim.diagShares(c)?.blocked ?? 0) >= 0.5).map(key).sort();
+    const shown = scene.shownJams().map(key).sort();
+    return !game.over && want.length > 0 && want.join() === shown.join();
+  }), 'la capa no marca las celdas trabadas');
+  await shot('5b-atascos');
+  await click('[data-act=toggleJams]');
+  await frames();
+  check(where, 'atascos', await page.evaluate(() => !window.__bb.ui.jams && window.__bb.scene.shownJams().length === 0), 'la capa no se apaga');
+  if (compact) await click('[data-act=toggleMore]');
+  await click('[data-act=togglePause]');
+
   // Final: sin despacho los clientes se van y la cocina cierra.
   await page.evaluate(() => { const b = window.__bb; b.sim.erase(b.game, 10, 3); b.advance(600); });
   await until('fin de la partida', () => document.querySelector('#dlgOver[open]'));
+  check(where, 'fin', await page.evaluate(() => { const s = window.__bb.game.stats, p = document.getElementById('overWhy')?.textContent ?? '';
+    return p.includes(String(s.expired)) && p.includes(String(s.turnedAway)); }), 'la hoja de cierre no reparte los clientes perdidos');
   await shot('6-fin');
 
   // Modo libre: la cocina del prototipo.

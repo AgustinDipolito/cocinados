@@ -107,13 +107,13 @@ progress::-moz-progress-bar { background: var(--ok); }
   padding: 0 var(--pad); border: var(--border) solid var(--ink); border-radius: var(--r-btn); background: var(--paper);
   font-weight: 600; cursor: pointer; transition: background var(--t-hover) var(--ease-out), transform var(--t-tap) var(--ease-out);
 }
-.btn.primary { background: var(--action); }
+.btn.primary, .btn.on { background: var(--action); }
 .btn.danger { background: var(--bad); border-color: var(--bad); color: var(--on-bad); }
 .btn.icon { padding: 0; border-color: transparent; }
 .btn:active, .tool:active { transform: translateY(1px); }
 @media (hover: hover) {
   .btn:hover, .tool:hover { background: var(--paper-2); }
-  .btn.primary:hover, .tool.active:hover { background: var(--action-hover); }
+  .btn.primary:hover, .btn.on:hover, .tool.active:hover { background: var(--action-hover); }
   .btn.danger:hover { background: var(--bad); }
 }
 
@@ -157,6 +157,8 @@ progress::-moz-progress-bar { background: var(--ok); }
 .panelHead h2 { display: flex; align-items: center; gap: var(--gap); font-size: var(--fs-md); font-weight: 600; }
 #insBody p { margin-top: 6px; }
 .bad { color: var(--bad); }
+.shares { display: flex; flex-wrap: wrap; gap: 4px var(--pad); margin-top: var(--gap); }
+.shares .cap { flex-basis: 100%; font-size: var(--fs-xs); color: var(--ink-soft); }
 #insActions { display: flex; flex-wrap: wrap; gap: var(--gap); margin-top: var(--pad); }
 #insActions:empty { display: none; }
 #log { padding-block: 0; }

@@ -255,3 +255,123 @@ test('invariante: el estado de cada pedido coincide con lo que hay en la cocina,
   }
   assert.ok(checked > 10000, 'el invariante casi no miró pedidos');
 });
+
+// ---------- diagnóstico de cuello de botella ----------
+
+/** Una línea sola sobre el terreno libre: carne, parrilla(s), armadora y despacho, con la cola siempre llena de clásicas. */
+function line(grills, seconds) {
+  const s = sim.newGame('sandbox', 1);
+  s.autoOrders = false; s.orders.length = 0; s.cells.fill(null);
+  const put = (x, y, kind, dir = 0) => sim.place(s, x, y, kind, dir);
+  put(0, 2, 'raw'); put(1, 2, 'grill'); put(2, 2, 'belt'); put(3, 2, 'belt'); put(4, 2, 'assembly'); put(5, 2, 'belt'); put(6, 2, 'dispatch');
+  put(4, 4, 'bun', 3); put(4, 3, 'belt', 3);
+  if (grills === 2) { put(2, 0, 'raw'); put(3, 0, 'grill'); put(4, 0, 'belt', 1); put(4, 1, 'belt', 1); } // la segunda entra por arriba
+  for (let i = 0; i < Math.round(seconds / STEP); i++) {
+    while (s.orders.length < QUEUE_MAX) sim.addOrder(s, 'classic', true);
+    sim.step(s, STEP);
+  }
+  return s;
+}
+
+test('diagnóstico: con una sola parrilla, la parrilla es el cuello de botella', () => {
+  const s = line(1, 180);
+  const b = sim.bottleneck(s);
+  assert.deepEqual([b?.kind, b?.x, b?.y], ['grill', 1, 2]);
+  assert.ok(b.shares.work > 0.95, `la parrilla trabajó ${b.shares.work}`);
+  const asm = sim.diagShares(sim.at(s, 4, 2));
+  assert.ok(asm.wait > 0.05, 'la armadora tendría que esperar carne una parte del tiempo');
+  const sum = Object.values(asm).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(sum - 1) < 1e-9);
+});
+
+test('diagnóstico: con dos parrillas, la armadora es el cuello de botella y las parrillas quedan trabadas', () => {
+  const s = line(2, 180);
+  const b = sim.bottleneck(s);
+  assert.deepEqual([b?.kind, b?.x, b?.y], ['assembly', 4, 2]);
+  assert.ok(b.shares.work > 0.95);
+  assert.ok(sim.diagShares(sim.at(s, 1, 2)).blocked > 0.4, 'la parrilla que sobra tendría que pasar trabada');
+  assert.ok(sim.diagShares(sim.at(s, 3, 2)).blocked > 0.5, 'la cinta que entra a la armadora tendría que pasar trabada');
+});
+
+test('diagnóstico: el acumulado pesa el último minuto (decae con 60 s)', () => {
+  const s = sim.newGame('sandbox', 1);
+  s.autoOrders = false; s.orders.length = 0; s.cells.fill(null);
+  sim.place(s, 0, 0, 'raw', 0); sim.place(s, 1, 0, 'grill', 0); sim.place(s, 2, 0, 'belt', 0); sim.place(s, 3, 0, 'belt', 0);
+  run(s, 600); // la parrilla cocina y saca: la cinta del final lleva siempre algo que no puede entregar
+  assert.ok(sim.diagShares(sim.at(s, 3, 0)).blocked > 0.99);
+  sim.place(s, 4, 0, 'dispatch', 0); // ahora la cinta entrega todo lo que llega
+  run(s, 60);
+  const sh = sim.diagShares(sim.at(s, 3, 0));
+  assert.ok(Math.abs(sh.blocked - Math.exp(-1)) < 0.03, `bloqueada ${sh.blocked.toFixed(3)} después de un minuto (se esperaba 1/e)`);
+});
+
+test('diagnóstico: girar conserva el acumulado; reemplazar y borrar lo pierden', () => {
+  const s = run(sim.newGame('career', 1), 60);
+  const grill = sim.at(s, 3, 1), before = sim.diagShares(grill);
+  assert.ok(before.work > 0.2);
+  sim.place(s, 3, 1, 'grill', 1);
+  assert.deepEqual(sim.diagShares(sim.at(s, 3, 1)), before);
+  sim.place(s, 3, 1, 'stock', 0);
+  assert.equal(sim.diagShares(sim.at(s, 3, 1)), null);
+  sim.erase(s, 3, 1); sim.place(s, 3, 1, 'grill', 0);
+  assert.equal(sim.diagShares(sim.at(s, 3, 1)), null);
+});
+
+test('diagnóstico: guardar y volver conserva los acumulados, y la misma semilla da el mismo diagnóstico', () => {
+  const a = run(sim.newGame('career', 7), 300), b = run(sim.newGame('career', 7), 120);
+  const restored = sim.deserialize(sim.serialize(b));
+  assert.deepEqual(restored.cells.map(c => c?.diag), b.cells.map(c => c?.diag));
+  run(restored, 180);
+  assert.equal(sim.serialize(restored), sim.serialize(a));
+  assert.deepEqual(sim.bottleneck(restored), sim.bottleneck(a));
+  assert.ok(sim.bottleneck(a), 'a los 300 s tendría que haber un cuello de botella');
+});
+
+test('diagnóstico: las cintas no cuentan, el empate lo decide lo trabado aguas arriba, y sin datos no hay cuello', () => {
+  const s = sim.newGame('sandbox', 1);
+  s.cells.fill(null);
+  assert.equal(sim.bottleneck(s), null);
+  const put = (x, y, kind, dir, diag) => { sim.place(s, x, y, kind, dir); Object.assign(sim.at(s, x, y).diag, diag); };
+  put(0, 0, 'belt', 0, { work: 60 }); // una cinta que trabaja todo el tiempo no es una máquina
+  put(1, 0, 'grill', 0, { work: 30, idle: 30 });
+  assert.equal(sim.bottleneck(s).kind, 'grill', 'una cinta no puede ser el cuello de botella');
+  Object.assign(sim.at(s, 1, 0).diag, { work: 59, idle: 1 });
+  put(5, 0, 'assembly', 0, { work: 59.5, idle: 0.5 }); // empata con la parrilla
+  put(4, 0, 'belt', 0, { blocked: 50, work: 10 }); // y lo que le llega está trabado
+  assert.equal(sim.bottleneck(s).kind, 'assembly');
+  sim.at(s, 4, 0).diag.blocked = 0;
+  sim.at(s, 0, 0).diag.work = 0; sim.at(s, 0, 0).diag.blocked = 60; // ahora lo trabado está antes de la parrilla
+  assert.equal(sim.bottleneck(s).kind, 'grill');
+  sim.at(s, 5, 0).diag.work = 30; // ya no empata: gana la que más trabaja aunque no tenga nada trabado antes
+  sim.at(s, 0, 0).diag.blocked = 0;
+  assert.equal(sim.bottleneck(s).kind, 'grill');
+  for (const c of s.cells) if (c) Object.assign(c.diag, { work: 0, idle: 60 });
+  assert.equal(sim.bottleneck(s), null, 'si ninguna máquina trabaja no hay cuello de botella');
+});
+
+test('carrera: los perdidos se separan entre plazo vencido y cola llena, y el total no cambia', () => {
+  const s = sim.newGame('career', 1);
+  sim.erase(s, 10, 3);
+  while (sim.addOrder(s, 'classic', true)); // la cola llena: el que llega se va sin pedir
+  let expired = 0, turned = 0;
+  while (!s.over && s.time < 2000) {
+    sim.step(s, STEP);
+    for (const e of s.events.splice(0)) { if (e.type === 'expired') expired++; if (e.type === 'turnedAway') turned++; }
+  }
+  assert.ok(expired > 0 && turned > 0, `vencidos ${expired}, cola llena ${turned}: la prueba necesita los dos`);
+  assert.deepEqual([s.stats.expired, s.stats.turnedAway], [expired, turned]);
+  assert.equal(sim.lost(s), expired + turned);
+  assert.equal(sim.lost(s), HEARTS);
+});
+
+test('diagnóstico: sin despacho, la cinta final, la armadora y el proveedor de carne pasan trabados', () => {
+  const s = sim.newGame('career', 1);
+  sim.erase(s, 10, 3);
+  while (!s.over && s.time < 300) sim.step(s, STEP);
+  assert.ok(s.over);
+  const blocked = (x, y) => sim.diagShares(sim.at(s, x, y)).blocked;
+  for (const [x, y, what] of [[9, 3, 'la cinta final'], [7, 3, 'la armadora'], [1, 1, 'el proveedor de carne']]) {
+    assert.ok(blocked(x, y) > 0.5, `${what}: bloqueada ${blocked(x, y).toFixed(2)}`);
+  }
+  assert.ok(sim.diagShares(sim.at(s, 1, 3)).blocked < 0.2, 'el pan sale a demanda: sin pedidos que lo pidan no se traba');
+});

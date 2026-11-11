@@ -1,6 +1,6 @@
 // El HUD es HTML encima del lienzo 3D. Lee el estado y avisa los toques con actions.*; no toca la simulación.
 import { BUILD_ORDER, RECIPES, KINDS, CAP, QUEUE_MAX, HEARTS, LOT, deliveriesFor } from './data.js';
-import { at, cost, refund, expandCost, canExpand, pendingNeed, availableRecipes, isStuck, delivered } from './sim.js';
+import { at, cost, refund, expandCost, canExpand, pendingNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck } from './sim.js';
 import { t, LANGS, getLang } from './i18n.js';
 
 const svg = d => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
@@ -19,10 +19,12 @@ const ICON = {
   heart: svg('M12 20.500l-1.3-1.200C5.4 14.5 3 12.3 3 9.2 3 6.8 4.9 5 7.2 5c1.4 0 2.8.700 3.6 1.800l1.2 1.5 1.2-1.500C14 5.7 15.4 5 16.8 5 19.1 5 21 6.8 21 9.200c0 3.1-2.4 5.3-7.7 10.100z'),
   more: svg('M5 10a2 2 0 110 4 2 2 0 010-4zm7 0a2 2 0 110 4 2 2 0 010-4zm7 0a2 2 0 110 4 2 2 0 010-4z'),
   arrow: svg('M4 10.500h10V6l7 6-7 6v-4.500H4z'),
+  jams: svg('M12 2l10 10-10 10L2 12zM9.4 8v8h1.8V8zM12.8 8v8h1.8V8z'), // la misma marca que la capa de atascos
 };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 export const clock = s => { s = Math.max(0, Math.floor(s)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
 const money = n => `$${n}`;
+const pct = share => t('percent', { n: Math.round(share * 100) });
 
 export function createHud(root, actions, thumbs) {
   root.innerHTML = `
@@ -86,7 +88,7 @@ export function createHud(root, actions, thumbs) {
     }
     $('top').classList.toggle('more', more);
     h += stat(t('statOnTime'), s.stats.onTime) + stat(t('statLate'), s.stats.late);
-    if (career) h += stat(t('statLost'), s.stats.expired);
+    if (career) h += stat(t('statLost'), lost(s));
     h += stat(t('statWaste'), s.stats.waste) + stat(t('statClock'), clock(s.time));
     set('stats', h);
     const btn = (act, icon, label, cls = '', text = '') =>
@@ -95,6 +97,7 @@ export function createHud(root, actions, thumbs) {
       btn('togglePause', ui.playing ? ICON.pause : ICON.play, t(ui.playing ? 'actPause' : 'actResume'), ui.playing ? '' : 'primary')
       + `<button class="btn" data-act="cycleSpeed" title="${t('actSpeed')}" aria-label="${t('actSpeed')} ${ui.speed}×">${ICON.speed}<span>${ui.speed}×</span></button>`
       + `<button class="btn moreBtn" data-act="toggleMore" aria-expanded="${more}" title="${t('actMore')}" aria-label="${t('actMore')}">${ICON.more}</button>`
+      + `<button class="btn extra ${ui.jams ? 'on' : ''}" data-act="toggleJams" aria-pressed="${ui.jams}" title="${t('jamsLabel')}" aria-label="${t('jamsLabel')}">${ICON.jams}<span class="lbl">${t('actJams')}</span></button>`
       + btn('help', ICON.help, t('actHelp'), 'extra') + btn('askRestart', ICON.restart, t('actRestart'), 'extra') + btn('exit', ICON.exit, t('actExit'), 'extra'));
     $('status').hidden = ui.playing;
     set('status', t('statusPaused'));
@@ -164,7 +167,9 @@ export function createHud(root, actions, thumbs) {
     if (sel) {
       const [c, lines] = inspectorText(s, sel.x, sel.y);
       set('insTitle', c ? `${img(c.kind, 'thumb small')}${t('kindLong_' + c.kind)}` : t('insTitle', sel));
-      set('insBody', lines.map(l => `<p>${l}</p>`).join(''));
+      const sh = c && c.kind !== 'belt' && diagShares(c); // un renglón de datos, no prosa: cuánto pasó en cada estado
+      set('insBody', lines.map(l => `<p>${l}</p>`).join('') + (sh ? `<div class="shares"><span class="cap">${t('sharesTitle')}</span>${
+        ['work', 'blocked', 'wait', 'idle'].map(k => stat(t('share_' + k), pct(sh[k]), '')).join('')}</div>` : ''));
       const back = c ? refund(s, c.kind) : 0;
       set('insActions', c ? `<button class="btn" data-act="rotateSelected">${ICON.rotate}<span>${t('actRotate')}</span></button>
         <button class="btn" data-act="eraseSelected">${ICON.erase}<span>${back ? t('actEraseRefund', { n: back }) : t('actErase')}</span></button>` : '');
@@ -233,8 +238,11 @@ export function createHud(root, actions, thumbs) {
   }
 
   function showOver(s, isBest) {
+    const b = bottleneck(s); // las dos oraciones del diagnóstico van en un solo párrafo: la hoja suma un bloque de prosa, no dos
+    const why = (b ? t('overBottleneck', { machine: t('kindLong_' + b.kind), pct: pct(b.shares.work) }) : t('overNoBottleneck'))
+      + ' ' + t('overLost', { expired: s.stats.expired, turned: s.stats.turnedAway });
     $('dlgOver').innerHTML = `<h1>${t('overTitle')}</h1>
-      <p>${t('overBody', { level: s.level, delivered: delivered(s), earned: s.stats.earned })}</p>${isBest ? `<p class="saved">${t('overBest')}</p>` : ''}
+      <p>${t('overBody', { level: s.level, delivered: delivered(s), earned: s.stats.earned })}</p><p id="overWhy">${why}</p>${isBest ? `<p class="saved">${t('overBest')}</p>` : ''}
       <div class="row end"><button class="btn" data-act="exit">${t('actExit')}</button><button class="btn primary" data-act="startNew" data-arg="career">${t('actPlayAgain')}</button></div>`;
     open('dlgOver');
   }

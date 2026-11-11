@@ -3,10 +3,10 @@
 import {
   DIRS, BELT_TIME, STUCK_AFTER, QUEUE_MAX, LATE_PAY, GRACE, HEARTS, REFUND, CAP, TIMES, KINDS,
   SOURCE_OF, INGREDIENTS, RECIPES, SANDBOX_DEADLINE, SANDBOX_INTERVAL, START_MONEY, orderInterval,
-  deliveriesFor, LOT,
+  deliveriesFor, LOT, DIAG,
 } from './data.js';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 function rand(s) { // mulberry32: el azar sale de la semilla guardada, así una partida se puede repetir
   s.seed = (s.seed + 0x6D2B79F5) | 0;
@@ -19,6 +19,7 @@ function rand(s) { // mulberry32: el azar sale de la semilla guardada, así una 
 const make = (kind, dir = 0) => ({
   kind, dir, item: null, cooldown: 0, rawCount: 0, cooked: 0, processing: null, store: 0,
   inv: { bun: 0, patty: 0, cheese: 0 }, job: null, output: null,
+  diag: { work: 0, blocked: 0, wait: 0, idle: 0 }, // segundos recientes en cada estado (ver track)
 });
 
 export const valid = (s, x, y) => x >= 0 && x < s.W && y >= 0 && y < s.H;
@@ -34,6 +35,7 @@ export const expandCost = s => (isCareer(s) ? LOT.cost(s.expansions) : 0);
 export const canExpand = s => s.expansions < LOT.maxExpansions;
 export const deadline = (s, key) => (isCareer(s) ? RECIPES[key].deadline : SANDBOX_DEADLINE[key]);
 export const delivered = s => s.stats.onTime + s.stats.late;
+export const lost = s => s.stats.expired + s.stats.turnedAway;
 
 function starterKitchen(s) {
   const row = (y, x0, x1, dir = 0) => { for (let x = x0; x <= x1; x++) put(s, x, y, 'belt', dir); };
@@ -56,7 +58,7 @@ export function newGame(mode = 'career', seed = 1) {
     v: SAVE_VERSION, mode, W: w, H: h, cells: Array(w * h).fill(null), orders: [], log: [], events: [],
     time: 0, autoClock: 0, autoOrders: true, orderId: 1, itemId: 1, seed,
     money: mode === 'career' ? START_MONEY : 0, hearts: HEARTS, level: 1, expansions: 0, over: false,
-    stats: { onTime: 0, late: 0, expired: 0, waste: 0, earned: 0 },
+    stats: { onTime: 0, late: 0, expired: 0, turnedAway: 0, waste: 0, earned: 0 },
   };
   starterKitchen(s);
   for (const key of isCareer(s) ? ['classic'] : ['classic', 'cheese', 'double']) addOrder(s, key);
@@ -135,8 +137,9 @@ function finishOrder(s, id, x, y) {
   }
 }
 
-function loseHeart(s) {
-  s.stats.expired++;
+/** cause: 'expired' (se le venció el plazo) | 'turnedAway' (encontró la cola llena). */
+function loseHeart(s, cause) {
+  s.stats[cause]++;
   s.hearts--;
   if (s.hearts <= 0) { s.over = true; emit(s, 'gameover'); }
 }
@@ -148,7 +151,7 @@ function expireOrders(s) {
     s.orders.splice(i, 1);
     log(s, 'logExpired', { id: o.id, recipe: o.recipeKey });
     emit(s, 'expired', { id: o.id });
-    loseHeart(s);
+    loseHeart(s, 'expired');
   }
 }
 
@@ -310,7 +313,7 @@ export function step(s, dt) {
       s.autoClock -= every;
       if (!availableRecipes(s).length) { /* la cocina no ofrece nada: no llega nadie */ }
       else if (s.orders.length < QUEUE_MAX) addOrder(s, randomRecipe(s));
-      else if (isCareer(s)) { log(s, 'logTurnedAway'); emit(s, 'turnedAway'); loseHeart(s); } // cola llena: el cliente se va
+      else if (isCareer(s)) { log(s, 'logTurnedAway'); emit(s, 'turnedAway'); loseHeart(s, 'turnedAway'); } // cola llena: el cliente se va
     }
   }
   if (isCareer(s)) expireOrders(s);
@@ -326,6 +329,84 @@ export function step(s, dt) {
     const c = at(s, x, y);
     if (c) output(s, x, y, c, dt);
   }
+  track(s, dt);
+}
+
+// ---------- diagnóstico ----------
+
+// En qué estado terminó el paso cada celda, leído de lo que quedó en ella después de mover y sacar:
+//   'work'    trabajando (cocina, arma, saca a su ritmo, o lleva un producto que todavía cruza)
+//   'blocked' tiene algo para sacar y el destino no lo recibe
+//   'wait'    le falta insumo habiendo pedidos que lo piden
+//   'idle'    libre
+// Un producto quieto en una celda (cinta) está bloqueado; una cinta vacía está libre.
+function cellState(s, c, need) {
+  if (c.item) return c.item.readyAt > s.time ? 'work' : 'blocked';
+  switch (c.kind) {
+    case 'belt': return 'idle';
+    case 'grill':
+      if (c.processing > 0) return 'work';
+      if (c.processing === 0 || (c.cooked > 0 && c.cooldown <= 0)) return 'blocked';
+      if (c.cooldown > 0) return 'work';
+      return need('patty') > 0 ? 'wait' : 'idle';
+    case 'stock':
+      if (c.cooldown > 0) return 'work';
+      if (need('patty') > 0) return c.store > 0 ? 'blocked' : 'wait';
+      return 'idle';
+    case 'assembly':
+      if (c.output && c.cooldown <= 0) return 'blocked';
+      if (c.job || c.cooldown > 0) return 'work';
+      return s.orders.some(o => o.status === 'pending') ? 'wait' : 'idle';
+    case 'dispatch': return s.orders.length ? 'wait' : 'idle';
+  }
+  const src = KINDS[c.kind];
+  if (!src?.emits) return 'idle';
+  if (c.cooldown > 0) return 'work';
+  return !src.onDemand || need(src.emits) > 0 ? 'blocked' : 'idle';
+}
+
+/** Acumulado reciente: todo decae con DIAG.tau y el estado de este paso suma dt. */
+function track(s, dt) {
+  const keep = Math.exp(-dt / DIAG.tau), needs = {}, need = k => (needs[k] ??= pendingNeed(s, k));
+  for (const c of s.cells) {
+    if (!c) continue;
+    const d = c.diag;
+    d.work *= keep; d.blocked *= keep; d.wait *= keep; d.idle *= keep;
+    d[cellState(s, c, need)] += dt;
+  }
+}
+
+/** Proporciones { work, blocked, wait, idle } (suman 1) del acumulado de una celda, o null sin datos. */
+export function diagShares(c) {
+  const d = c?.diag, total = d ? d.work + d.blocked + d.wait + d.idle : 0;
+  return total > 0 ? { work: d.work / total, blocked: d.blocked / total, wait: d.wait / total, idle: d.idle / total } : null;
+}
+
+/** La mayor proporción bloqueada entre las celdas que sacan hacia (x, y). */
+export function upstreamBlocked(s, x, y) {
+  let max = 0;
+  DIRS.forEach(([dx, dy], d) => {
+    const n = at(s, x - dx, y - dy);
+    if (n?.dir === d) max = Math.max(max, diagShares(n)?.blocked ?? 0);
+  });
+  return max;
+}
+
+/**
+ * La máquina (no cinta) que frena la cocina: la de mayor proporción trabajando; con empate (DIAG.tie),
+ * la de mayor proporción bloqueada aguas arriba. Devuelve { x, y, kind, shares, upstream } o null si no
+ * hay datos o ninguna llega a DIAG.minWork.
+ */
+export function bottleneck(s) {
+  let best = null;
+  for (let i = 0; i < s.cells.length; i++) {
+    const c = s.cells[i], shares = c && c.kind !== 'belt' && diagShares(c);
+    if (!shares) continue;
+    const x = i % s.W, y = Math.floor(i / s.W), cand = { x, y, kind: c.kind, shares, upstream: upstreamBlocked(s, x, y) };
+    const w = shares.work, bw = best?.shares.work;
+    if (!best || w > bw + DIAG.tie || (w >= bw - DIAG.tie && cand.upstream > best.upstream)) best = cand;
+  }
+  return best && best.shares.work >= DIAG.minWork ? best : null;
 }
 
 // ---------- guardado ----------
