@@ -42,12 +42,16 @@ Fila de clientes en `src/crowd.js` (vista pura, sin three ni DOM, probada con no
 (`''`, `'soon'`, `'late'`: la usan la tarjeta y la marca del cliente), `curb(terreno)` (la vereda: carriles,
 cabeza de la fila, entrada y salida), `newCrowd()`, `stepCrowd(crowd, pedidos, eventos, tiempo, dt, vereda, quieto)`.
 `buildCustomer(look)` en `models.js`; `shownCustomers()` en la escena (para el arnés).
+Mejoras en `src/sim.js`: `upgrade(s, x, y)` (mismo contrato que `place`: `ok` o `reason` `'out' | 'none' | 'done' | 'money'`),
+`upgradeCost(s, kind)`, `refund(s, celda)` (la mitad de máquina más mejora: el único lugar que calcula un reembolso), y los
+valores de la celda `burners(c)`, `stockCap(c)`, `assembleTime(c)`. `buildMachine(kind, up)` arma el modelo mejorado.
 
 **Idiomas.** Español (origen, voseo, sin exclamaciones) e inglés. Mecanismo: `STRINGS` y `t()` en
 `src/i18n.js`; `t()` tira error si la clave no existe y la prueba compara idiomas.
 
 **Arnés.** `npm run check` = `npm test` (1 s) → `npm run build` (1 s) → `npm run shots` (unos 9 min:
-6 corridas, 60 capturas en `shots/`, entre ellas la capa de atascos prendida con un clic y el divisor y el puente puestos con clics, WebGL por software; el
+6 corridas, 72 capturas en `shots/`, entre ellas la capa de atascos prendida con un clic, el divisor y el puente puestos con clics,
+y el inspector de la parrilla sin plata para mejorarla y ya mejorada, WebGL por software; el
 recorrido comprueba tres veces que la fila de la vereda es la cola de pedidos, en orden, en su lugar y sin panel encima). `npm run shots -- phone-es` corre una sola.
 
 **Inscripciones.** Una máquina nueva se anota en: `KINDS` y `BUILD_ORDER` (`data.js`); `accepts`,
@@ -62,6 +66,9 @@ La barra de herramientas sale de `BUILD_ORDER`: con catorce piezas entra en 1024
 toma el ancho de su nombre (`style.css`); en teléfono se desplaza.
 Una forma nueva de que un pedido deje la cola: su evento con `id` y su motivo de salida en `stepCrowd` (`crowd.js`);
 sin evento, el cliente desaparece en el acto. Una forma nueva de local: su frente en `curb` (`crowd.js`).
+Una mejora: `UPGRADES` (`data.js`), su valor de celda en `sim.js` (como `burners`/`stockCap`/`assembleTime`, y todo lugar que
+lea el valor base pasa a leer ése), su pieza en el constructor del modelo (`builders[kind](up)`), y `upHint_`/`upDone_` en los
+dos idiomas (familia en `test/i18n.test.js`).
 Una receta: `RECIPES`, `SANDBOX_DEADLINE` y `recipe_`. Un ingrediente: `INGREDIENTS`, `SOURCE_OF`,
 `buildItem`, `item_` y la familia en `test/i18n.test.js`.
 
@@ -148,6 +155,16 @@ navegador (`npm run shots`) no corre ahí: se corre a mano antes de subir.
   dónde viaja y sale por el lado opuesto. No gira: queda en dirección 0.
 - Arrastre: la cinta pasa por encima de divisores y puentes (así se dibuja la segunda línea a través del puente); un toque
   sí los reemplaza. Divisor y puente se ponen de a uno, con la dirección de `R`.
+- Mejoras (`UPGRADES`): parrilla de doble hornalla ($140, dos carnes a la vez), armadora con segundo brazo ($180, 2,5 s),
+  almacén con estantes ($60, 16 carnes). Un solo nivel: `up` (booleano) en la celda; se guarda, girar lo conserva, reemplazar
+  o borrar lo pierde; borrar devuelve la mitad de máquina más mejora; en Modo libre es gratis. Se compra con «Mejorar» en el
+  inspector: la consecuencia va escrita en el cuerpo, antes del botón; sin plata el botón se ve corto y su precio dice cuánto
+  falta (además del rojo) y el toque avisa con `toastNoMoney`; mejorada, el inspector lo dice y el botón no está. A la vista:
+  banderín dorado en la esquina de atrás (no gira con la máquina), segundo brazo, estantes con parantes, segunda carne en la
+  parrilla. La escena cachea el modelo con clave `kind` más `+` si está mejorada.
+- Parrilla: `cooking` es un arreglo, una entrada por hornalla ocupada, de la más vieja a la más nueva, con los segundos que le
+  faltan; 0 es lista sin lugar (reintenta en cada paso). Con una hornalla se comporta exactamente como el viejo `processing`.
+  El reloj por carne de la etapa 5 se monta dejando que la entrada siga bajando de 0 (su edad es el negativo) en lugar de fijarla.
 - Ninguna máquina de estados explícita: se auditaron ocho (pedido, parrilla, armadora, sesión, gesto, HUD, cachés de la escena) y todas son chicas o derivadas. Lo que las cuida es el invariante de `test/sim.test.js` y los comentarios de fase en `sim.js` y `main.js`.
 
 **Con permiso.** Publicar el juego, crear el repositorio o hacer commits, cambiar el nombre «Burger

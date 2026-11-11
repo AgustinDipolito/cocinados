@@ -77,11 +77,11 @@ export function createScene(canvas) {
 
   function syncMachines(s, t, playing) {
     for (let i = 0; i < s.cells.length; i++) {
-      const c = s.cells[i], key = c ? c.kind : '';
+      const c = s.cells[i], key = c ? c.kind + (c.up ? '+' : '') : ''; // mejorar cambia el modelo
       let m = machines[i];
       if ((m?.key ?? '') !== key) {
         if (m) world.remove(m.root);
-        m = machines[i] = c ? { key, root: buildMachine(c.kind) } : null;
+        m = machines[i] = c ? { key, root: buildMachine(c.kind, c.up) } : null;
         if (m) {
           m.root.position.set((i % s.W) + 0.5, 0, Math.floor(i / s.W) + 0.5);
           if (m.root.userData.ui) m.root.userData.ui.rotation.x = -PITCH;

@@ -200,8 +200,27 @@ await pool(runs, async ([lang, vp]) => {
   }), 'el inspector tapa la celda que se inspecciona');
   await click('#log summary');
   await shot('4-carrera-jugando');
-  await click('[data-act=closeInspector]');
   await click('#log summary');
+
+  // Mejorar la parrilla desde el inspector, en pausa: sin plata el botón se ve corto, dice cuánto falta y no cobra;
+  // con plata mejora, el inspector lo dice y el botón ya no está.
+  await click('[data-act=togglePause]');
+  await until('cartel de pausa', () => !document.querySelector('#status').hidden);
+  await page.evaluate(() => { window.__bb.game.money = 100; });
+  await until('Mejorar corto, con lo que falta', () => document.querySelector('[data-act=upgradeSelected].short')?.textContent.includes('$40'));
+  await shot('4b-mejorable-sin-dinero');
+  await click('[data-act=upgradeSelected]');
+  await until('aviso de que no alcanza para mejorar', () => document.querySelector('#toast.show'));
+  check(where, 'mejorar sin dinero', await page.evaluate(() => { const { game, sim } = window.__bb; return game.money === 100 && !sim.at(game, 3, 1).up; }), 'cobró o mejoró sin plata');
+  await page.evaluate(() => { window.__bb.game.money = 300; });
+  await until('Mejorar con plata', () => document.querySelector('[data-act=upgradeSelected]:not(.short)'));
+  await click('[data-act=upgradeSelected]');
+  await until('parrilla mejorada, cobrada y sin botón', () => { const { game, sim } = window.__bb;
+    return sim.at(game, 3, 1).up && game.money === 160 && !document.querySelector('[data-act=upgradeSelected]') && !document.querySelector('#inspector').hidden; });
+  await frames();
+  await shot('4c-mejorada');
+  await click('[data-act=closeInspector]');
+  await click('[data-act=togglePause]');
 
   // Se construye con clics, en pausa (así la plata no cambia sola mientras se mide): un proveedor de queso y su cinta.
   await click('[data-act=togglePause]');

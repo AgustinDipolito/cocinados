@@ -3,10 +3,10 @@
 import {
   DIRS, BELT_TIME, STUCK_AFTER, QUEUE_MAX, LATE_PAY, GRACE, HEARTS, REFUND, CAP, TIMES, KINDS,
   SOURCE_OF, INGREDIENTS, RECIPES, SANDBOX_DEADLINE, SANDBOX_INTERVAL, START_MONEY, orderInterval,
-  deliveriesFor, LOT, DIAG,
+  deliveriesFor, LOT, DIAG, UPGRADES,
 } from './data.js';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 function rand(s) { // mulberry32: el azar sale de la semilla guardada, así una partida se puede repetir
   s.seed = (s.seed + 0x6D2B79F5) | 0;
@@ -17,7 +17,9 @@ function rand(s) { // mulberry32: el azar sale de la semilla guardada, así una 
 }
 
 const make = (kind, dir = 0) => ({
-  kind, dir, item: null, cooldown: 0, rawCount: 0, cooked: 0, processing: null, store: 0,
+  // cooking: lo que tiene cada hornalla ocupada, de la más vieja a la más nueva (segundos que le faltan; 0 = lista sin lugar)
+  // up: tiene su mejora (UPGRADES)
+  kind, dir, item: null, cooldown: 0, rawCount: 0, cooked: 0, cooking: [], up: false, store: 0,
   inv: { bun: 0, patty: 0, cheese: 0 }, job: null, output: null,
   item2: null, turn: 0, // item2: carril norte-sur del puente (item lleva el este-oeste) · turn: a qué salida le toca en el divisor
   diag: { work: 0, blocked: 0, wait: 0, idle: 0 }, // segundos recientes en cada estado (ver track)
@@ -31,7 +33,13 @@ const log = (s, key, p) => { s.log.unshift({ time: s.time, key, p }); if (s.log.
 const isCareer = s => s.mode === 'career';
 
 export const cost = (s, kind) => (isCareer(s) ? KINDS[kind].cost : 0);
-export const refund = (s, kind) => Math.floor(cost(s, kind) * REFUND);
+export const upgradeCost = (s, kind) => (isCareer(s) ? UPGRADES[kind].cost : 0);
+/** Lo que devuelve borrar o reemplazar la máquina c: la mitad de lo invertido en ella (máquina más mejora). */
+export const refund = (s, c) => Math.floor((cost(s, c.kind) + (c.up ? upgradeCost(s, c.kind) : 0)) * REFUND);
+// Lo que la mejora cambia: cada lugar que lee estos valores lee los de la celda.
+export const burners = c => (c.up ? UPGRADES.grill.burners : 1);
+export const stockCap = c => (c.up ? UPGRADES.stock.stock : CAP.stock);
+export const assembleTime = c => (c.up ? UPGRADES.assembly.assemble : TIMES.assemble);
 export const expandCost = s => (isCareer(s) ? LOT.cost(s.expansions) : 0);
 export const canExpand = s => s.expansions < LOT.maxExpansions;
 export const deadline = (s, key) => (isCareer(s) ? RECIPES[key].deadline : SANDBOX_DEADLINE[key]);
@@ -210,7 +218,7 @@ function expireOrders(s) {
 
 // ---------- construir ----------
 
-const holdsStuff = c => !!(c.item || c.item2 || c.store || c.cooked || c.rawCount || c.output || c.job || c.processing !== null
+const holdsStuff = c => !!(c.item || c.item2 || c.store || c.cooked || c.rawCount || c.output || c.job || c.cooking.length
   || c.inv.bun || c.inv.patty || c.inv.cheese);
 
 /** Lo que había adentro se pierde; si era la hamburguesa de un pedido, el pedido vuelve a la cola. */
@@ -233,7 +241,7 @@ export function place(s, x, y, kind, dir = 0) {
     cur.dir = dir;
     return { ok: true };
   }
-  const price = cost(s, kind) - (cur ? refund(s, cur.kind) : 0);
+  const price = cost(s, kind) - (cur ? refund(s, cur) : 0);
   if (isCareer(s) && s.money < price) return { ok: false, reason: 'money' };
   if (cur) loseContents(s, cur);
   s.money -= price;
@@ -245,9 +253,25 @@ export function erase(s, x, y) {
   const cur = at(s, x, y);
   if (!cur || s.over) return false;
   loseContents(s, cur);
-  s.money += refund(s, cur.kind);
+  s.money += refund(s, cur);
   s.cells[y * s.W + x] = null;
   return true;
+}
+
+/**
+ * Mejora la máquina de (x, y): un solo nivel, vive en la celda, sobrevive a girar y se pierde al reemplazar.
+ * Devuelve { ok } o { ok:false, reason } con reason 'out' | 'none' (no se mejora) | 'done' (ya mejorada) | 'money'.
+ */
+export function upgrade(s, x, y) {
+  const c = at(s, x, y);
+  if (!c || s.over) return { ok: false, reason: 'out' };
+  if (!UPGRADES[c.kind]) return { ok: false, reason: 'none' };
+  if (c.up) return { ok: false, reason: 'done' };
+  const price = upgradeCost(s, c.kind);
+  if (isCareer(s) && s.money < price) return { ok: false, reason: 'money' };
+  s.money -= price;
+  c.up = true;
+  return { ok: true };
 }
 
 /** El terreno crece hacia la derecha y hacia abajo: nada de lo construido cambia de celda. */
@@ -286,7 +310,7 @@ function receive(s, cell, x, y, item, fx, fy, d) {
       return true;
     }
     case 'grill': if (cell.rawCount >= CAP.grillRaw) return false; cell.rawCount++; return true;
-    case 'stock': if (cell.store >= CAP.stock) return false; cell.store++; return true;
+    case 'stock': if (cell.store >= stockCap(cell)) return false; cell.store++; return true;
     case 'assembly': if (cell.inv[item.type] >= CAP.inv) return false; cell.inv[item.type]++; return true;
     case 'dispatch':
       if (item.type === 'burger') finishOrder(s, item.orderId, x, y);
@@ -354,14 +378,12 @@ export function isStuck(s, x, y, slot = 'item') {
 const canMake = (c, r) => INGREDIENTS.every(i => c.inv[i] >= r[i]);
 
 function process(s, c, dt) {
-  if (c.kind === 'grill') {
-    if (c.processing !== null) {
-      c.processing -= dt;
-      if (c.processing <= 0) {
-        if (c.cooked < CAP.grillCooked) { c.cooked++; c.processing = null; } else c.processing = 0; // 0 = lista pero sin lugar: reintenta en cada paso
-      }
+  if (c.kind === 'grill') { // una carne por hornalla (burners); la más vieja pasa primero a las cocidas
+    for (let i = 0; i < c.cooking.length; i++) {
+      if ((c.cooking[i] -= dt) > 0) continue;
+      if (c.cooked < CAP.grillCooked) { c.cooked++; c.cooking.splice(i--, 1); } else c.cooking[i] = 0; // 0 = lista pero sin lugar: reintenta en cada paso
     }
-    if (c.processing === null && c.rawCount > 0) { c.rawCount--; c.processing = TIMES.cook; }
+    while (c.cooking.length < burners(c) && c.rawCount > 0) { c.rawCount--; c.cooking.push(TIMES.cook); }
   } else if (c.kind === 'assembly') { // libre | con trabajo (job) | con hamburguesa lista (output): nunca job y output a la vez
     if (c.job) {
       c.job.left -= dt;
@@ -379,7 +401,7 @@ function process(s, c, dt) {
         const r = RECIPES[o.recipeKey];
         for (const i of INGREDIENTS) c.inv[i] -= r[i];
         o.status = 'assembling';
-        c.job = { orderId: o.id, recipeKey: o.recipeKey, left: TIMES.assemble };
+        c.job = { orderId: o.id, recipeKey: o.recipeKey, left: assembleTime(c) };
         log(s, 'logAssembling', { id: o.id, recipe: o.recipeKey });
       }
     }
@@ -448,8 +470,8 @@ function cellState(s, c, need, own) { // need(ingrediente): lo que pide la cocin
   switch (c.kind) {
     case 'belt': case 'splitter': case 'bridge': return 'idle';
     case 'grill':
-      if (c.processing > 0) return 'work';
-      if (c.processing === 0 || (c.cooked > 0 && c.cooldown <= 0)) return 'blocked';
+      if (c.cooking.some(left => left > 0)) return 'work';
+      if (c.cooking.length || (c.cooked > 0 && c.cooldown <= 0)) return 'blocked';
       if (c.cooldown > 0) return 'work';
       return need('patty') > 0 ? 'wait' : 'idle';
     case 'stock':

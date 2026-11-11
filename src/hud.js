@@ -1,6 +1,6 @@
 // El HUD es HTML encima del lienzo 3D. Lee el estado y avisa los toques con actions.*; no toca la simulación.
-import { BUILD_ORDER, RECIPES, KINDS, CAP, QUEUE_MAX, HEARTS, LOT, deliveriesFor } from './data.js';
-import { at, cost, refund, expandCost, canExpand, sourceNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck } from './sim.js';
+import { BUILD_ORDER, RECIPES, KINDS, CAP, UPGRADES, QUEUE_MAX, HEARTS, LOT, deliveriesFor } from './data.js';
+import { at, cost, refund, upgradeCost, burners, stockCap, assembleTime, expandCost, canExpand, sourceNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck } from './sim.js';
 import { t, LANGS, getLang } from './i18n.js';
 import { orderRisk } from './crowd.js';
 
@@ -20,6 +20,7 @@ const ICON = {
   heart: svg('M12 20.500l-1.3-1.200C5.4 14.5 3 12.3 3 9.2 3 6.8 4.9 5 7.2 5c1.4 0 2.8.700 3.6 1.800l1.2 1.5 1.2-1.500C14 5.7 15.4 5 16.8 5 19.1 5 21 6.8 21 9.200c0 3.1-2.4 5.3-7.7 10.100z'),
   more: svg('M5 10a2 2 0 110 4 2 2 0 010-4zm7 0a2 2 0 110 4 2 2 0 010-4zm7 0a2 2 0 110 4 2 2 0 010-4z'),
   arrow: svg('M4 10.500h10V6l7 6-7 6v-4.500H4z'),
+  upgrade: svg('M12 3l8 8h-5v9H9v-9H4z'),
   jams: svg('M12 2l10 10-10 10L2 12zM9.4 8v8h1.8V8zM12.8 8v8h1.8V8z'), // la misma marca que la capa de atascos
 };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -154,13 +155,19 @@ export function createHud(root, actions, thumbs) {
       for (const slot of ['item', 'item2']) if (isStuck(s, x, y, slot)) lines.push(`<strong class="bad">${t('insStuck', { item: t('item_' + c[slot].type) })}</strong>`);
     } else if (c.kind === 'grill') {
       lines.push(t('insGrill', { raw: c.rawCount, rawMax: CAP.grillRaw, cooked: c.cooked, cookedMax: CAP.grillCooked }));
-      lines.push(c.processing === null ? t('insGrillIdle') : c.processing > 0 ? t('insGrillBusy', { s: c.processing.toFixed(1) }) : t('insGrillFull'));
-    } else if (c.kind === 'stock') lines.push(t('insStock', { n: c.store, max: CAP.stock, need: sourceNeed(s, x, y) }));
+      const busy = c.cooking.filter(left => left > 0), next = Math.min(...busy).toFixed(1);
+      lines.push(!c.cooking.length ? t('insGrillIdle') : !busy.length ? t('insGrillFull')
+        : burners(c) > 1 ? t('insGrillBusyMany', { n: busy.length, max: burners(c), s: next }) : t('insGrillBusy', { s: next }));
+    } else if (c.kind === 'stock') lines.push(t('insStock', { n: c.store, max: stockCap(c), need: sourceNeed(s, x, y) }));
     else if (c.kind === 'assembly') {
       lines.push(t('insAssembly', { ...c.inv, max: CAP.inv }));
       lines.push(c.job ? t('insAssemblyJob', { id: c.job.orderId }) : c.output ? t('insAssemblyOut') : t('insAssemblyIdle'));
     } else if (src.emits) lines.push(src.onDemand ? t('insSourceDemand', { n: sourceNeed(s, x, y) }) : t('insSourceContinuous'));
     else lines.push(t('insDispatch'));
+    // la mejora: hecha, se dice; si no, la consecuencia va escrita antes del botón Mejorar (insActions)
+    const up = { up: true }, base = { up: false }; // cada frase usa los huecos que le tocan
+    if (UPGRADES[c.kind]) lines.push(t((c.up ? 'upDone_' : 'upHint_') + c.kind, {
+      burners: burners(up), time: assembleTime(up).toLocaleString(getLang()), baseTime: assembleTime(base), stock: stockCap(up), baseStock: stockCap(base) }));
     return [c, lines];
   }
 
@@ -173,8 +180,11 @@ export function createHud(root, actions, thumbs) {
       const sh = c && !KINDS[c.kind].carries && diagShares(c); // un renglón de datos, no prosa: cuánto pasó en cada estado
       set('insBody', lines.map(l => `<p>${l}</p>`).join('') + (sh ? `<div class="shares"><span class="cap">${t('sharesTitle')}</span>${
         ['work', 'blocked', 'wait', 'idle'].map(k => stat(t('share_' + k), pct(sh[k]), '')).join('')}</div>` : ''));
-      const back = c ? refund(s, c.kind) : 0;
-      set('insActions', c ? `${KINDS[c.kind].noTurn ? '' : `<button class="btn" data-act="rotateSelected">${ICON.rotate}<span>${t('actRotate')}</span></button>`}
+      const back = c ? refund(s, c) : 0, price = c && UPGRADES[c.kind] && !c.up ? upgradeCost(s, c.kind) : null;
+      const short = price !== null && s.mode === 'career' && s.money < price; // se ve corto como las herramientas y dice cuánto falta
+      const upBtn = price === null ? '' : `<button class="btn ${short ? 'short' : ''}" data-act="upgradeSelected">${ICON.upgrade}<span>${t('actUpgrade')}</span>
+        <span class="price">${short ? t('upShort', { price, n: price - s.money }) : price ? money(price) : t('free')}</span></button>`;
+      set('insActions', c ? `${upBtn}${KINDS[c.kind].noTurn ? '' : `<button class="btn" data-act="rotateSelected">${ICON.rotate}<span>${t('actRotate')}</span></button>`}
         <button class="btn" data-act="eraseSelected">${ICON.erase}<span>${back ? t('actEraseRefund', { n: back }) : t('actErase')}</span></button>` : '');
       $('insClose').setAttribute('aria-label', t('actClose'));
     }

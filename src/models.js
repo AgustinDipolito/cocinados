@@ -2,7 +2,8 @@
 // Cada máquina mira hacia +X (su salida); quien la coloca la gira según la dirección de la celda.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { RECIPES, CAP, TIMES } from './data.js';
+import { RECIPES, TIMES } from './data.js';
+import { stockCap, assembleTime } from './sim.js';
 import { curb } from './crowd.js';
 
 // ---------- paleta 3D ----------
@@ -30,6 +31,7 @@ export const M = {
   bun: std(C.bun, 0.55), bunIn: std(C.bunIn, 0.8), raw: std(C.raw, 0.5), patty: std(C.patty, 0.85),
   cheese: std(C.cheese, 0.4), sesame: std(C.sesame, 0.6), bag: std(C.bag, 0.9), gold: std(C.gold, 0.25, 0.9),
   knob: toy(C.knob), robot: toy(C.robot), lamp: std(0x331a08, 0.5, 0, { emissive: C.lamp, emissiveIntensity: 1.6 }),
+  pennant: std(C.gold, 0.35, 0.6, { side: THREE.DoubleSide }),
   barBg: new THREE.MeshBasicMaterial({ color: 0x1a2330 }), barFg: new THREE.MeshBasicMaterial({ color: C.arrow }),
 };
 
@@ -218,6 +220,18 @@ function progressBar(y) {
   return g;
 }
 
+/** Banderín dorado en la esquina de atrás de una máquina mejorada: una forma propia además del color. No gira con la máquina. */
+function pennant() {
+  const flag = mesh(geo('pennant', () => {
+    const s = new THREE.Shape();
+    s.moveTo(0, 0); s.lineTo(0.5, -0.15); s.lineTo(0, -0.3); s.closePath();
+    return new THREE.ShapeGeometry(s);
+  }), M.pennant, 0.02, 1.6, 0);
+  const g = group(cyl(0.025, 0.025, 1.62, M.steel, 0, 0.81, 0, 8), flag);
+  g.position.set(-0.42, 0, -0.42);
+  return g;
+}
+
 /** Muestra los primeros n de una lista de mallas. */
 const showCount = (list, n) => list.forEach((o, i) => { o.visible = i < n; });
 
@@ -272,21 +286,21 @@ const builders = {
     for (let i = 0; i < 3; i++) { const k = cyl(0.045, 0.045, 0.04, M.knob, -0.22 + i * 0.22, 0.32, 0.47); k.rotation.x = Math.PI / 2; body.add(k); }
     const y = 0.605;
     const raws = [0, 1, 2].map(i => putAt(patty(M.raw), -0.22, y + i * PATTY_H, -0.2));
-    const cookMat = M.raw.clone(), cooking = putAt(patty(cookMat), -0.05, y, 0.18);
+    // una carne en cocción por hornalla: la segunda sólo aparece en la doble hornalla, que cocina dos a la vez
+    const cooking = [[-0.05, 0.18], [0.25, 0.22]].map(([x, z]) => putAt(patty(M.raw.clone()), x, y, z));
     const cooked = [0, 1].map(i => putAt(patty(), 0.24, y + i * PATTY_H, -0.14));
     const smokeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false });
     const smoke = [0, 1, 2].map(() => { const s = new THREE.Mesh(geo('puff', () => new THREE.SphereGeometry(0.09, 10, 8)), smokeMat.clone()); return s; });
-    body.add(...raws, cooking, ...cooked, ...smoke);
+    body.add(...raws, ...cooking, ...cooked, ...smoke);
     const bar = progressBar(1.25), from = new THREE.Color(C.raw), to = new THREE.Color(C.patty);
     return {
       body, ui: bar,
       update(c, t, playing) {
-        const busy = c.processing !== null, p = busy ? 1 - c.processing / TIMES.cook : 0;
-        showCount(raws, c.rawCount); showCount(cooked, c.cooked);
-        cooking.visible = busy;
-        cookMat.color.lerpColors(from, to, Math.min(1, p));
+        const busy = c.cooking.length > 0, next = Math.min(...c.cooking.filter(left => left > 0)); // la próxima que sale
+        showCount(raws, c.rawCount); showCount(cooked, c.cooked); showCount(cooking, c.cooking.length);
+        c.cooking.forEach((left, i) => cooking[i]?.material.color.lerpColors(from, to, Math.min(1, 1 - left / TIMES.cook)));
         ember.material.emissiveIntensity = busy ? 1.5 + Math.sin(t * 6) * 0.25 : 0.3;
-        bar.userData.set(busy && c.processing > 0 ? p : -1);
+        bar.userData.set(next < Infinity ? 1 - next / TIMES.cook : -1);
         smoke.forEach((s, i) => {
           const k = (t * 0.6 + i / 3) % 1;
           s.visible = busy && playing;
@@ -298,19 +312,23 @@ const builders = {
     };
   },
 
-  stock() {
+  stock(up) {
     const body = group(
       box(0.92, 0.46, 0.92, M.stock, 0, 0.23, 0, 0.06), box(0.8, 0.04, 0.8, M.steel, 0, 0.47, 0, 0.02), chute(), outArrow(0.49),
       cyl(0.025, 0.025, 0.6, M.steel, -0.38, 0.76, -0.38, 10), cyl(0.025, 0.025, 0.6, M.steel, 0.38, 0.76, -0.38, 10),
       box(0.86, 0.07, 0.14, M.steel, 0, 1.06, -0.38, 0.03), box(0.74, 0.03, 0.08, M.lamp, 0, 1.02, -0.38, 0.01),
     );
-    const patties = Array.from({ length: CAP.stock }, (_, i) =>
+    if (up) { // estantes: dos parantes más adelante y un estante de rejilla a media altura
+      for (const x of [-0.38, 0.38]) body.add(cyl(0.025, 0.025, 0.6, M.steel, x, 0.76, 0.38, 10));
+      for (const z of [-0.38, 0.38]) body.add(box(0.8, 0.025, 0.04, M.steel, 0, 0.8, z, 0.01));
+    }
+    const patties = Array.from({ length: stockCap({ up }) }, (_, i) =>
       putAt(patty(), -0.19 + (i % 2) * 0.38, 0.49 + (i >> 2) * PATTY_H, -0.05 + ((i >> 1) % 2) * 0.34));
     body.add(...patties);
     return { body, update: c => showCount(patties, c.store) };
   },
 
-  assembly() {
+  assembly(up) {
     const body = group(box(0.94, 0.42, 0.94, M.assembly, 0, 0.21, 0, 0.06), box(0.84, 0.05, 0.84, M.wood, 0, 0.445, 0, 0.02), chute(), outArrow(0.47));
     const top = 0.47;
     // Bandejas de ingredientes recibidos (hasta tres a la vista de cada uno).
@@ -320,18 +338,22 @@ const builders = {
       cheese: [0, 1, 2].map(i => putAt(cheeseSlice(), 0.27, top + i * CHEESE_H, 0.28)),
     };
     for (const k in trays) body.add(...trays[k]);
-    // Brazo: hombro -> codo -> pinza.
-    const claw = group(box(0.2, 0.05, 0.07, M.darkSteel, 0, 0, 0, 0.02), box(0.04, 0.12, 0.07, M.steel, -0.09, -0.06, 0, 0.015), box(0.04, 0.12, 0.07, M.steel, 0.09, -0.06, 0, 0.015));
-    claw.position.y = 0.4;
-    const fore = group(box(0.1, 0.4, 0.1, M.robot, 0, 0.2, 0, 0.04), cyl(0.075, 0.075, 0.14, M.darkSteel, 0, 0, 0, 16), claw);
-    fore.children[1].rotation.x = Math.PI / 2;
-    fore.position.y = 0.46;
-    const arm = group(box(0.12, 0.46, 0.12, M.robot, 0, 0.23, 0, 0.05), fore);
-    const shoulder = group(cyl(0.13, 0.16, 0.12, M.darkSteel, 0, 0.06, 0, 20), arm);
-    arm.position.y = 0.1;
-    shoulder.position.set(-0.27, top, -0.27);
-    shoulder.rotation.y = -Math.PI / 4; // el brazo se dobla hacia el centro de la tabla
-    body.add(shoulder);
+    // Brazo: hombro -> codo -> pinza. Con la mejora hay un segundo brazo en la otra esquina de atrás.
+    const robot = (x, turn) => {
+      const claw = group(box(0.2, 0.05, 0.07, M.darkSteel, 0, 0, 0, 0.02), box(0.04, 0.12, 0.07, M.steel, -0.09, -0.06, 0, 0.015), box(0.04, 0.12, 0.07, M.steel, 0.09, -0.06, 0, 0.015));
+      claw.position.y = 0.4;
+      const fore = group(box(0.1, 0.4, 0.1, M.robot, 0, 0.2, 0, 0.04), cyl(0.075, 0.075, 0.14, M.darkSteel, 0, 0, 0, 16), claw);
+      fore.children[1].rotation.x = Math.PI / 2;
+      fore.position.y = 0.46;
+      const arm = group(box(0.12, 0.46, 0.12, M.robot, 0, 0.23, 0, 0.05), fore);
+      const shoulder = group(cyl(0.13, 0.16, 0.12, M.darkSteel, 0, 0.06, 0, 20), arm);
+      arm.position.y = 0.1;
+      shoulder.position.set(x, top, -0.27);
+      shoulder.rotation.y = turn; // el brazo se dobla hacia el centro de la tabla
+      body.add(shoulder);
+      return { arm, fore };
+    };
+    const robots = up ? [robot(-0.27, -Math.PI / 4), robot(0.27, -3 * Math.PI / 4)] : [robot(-0.27, -Math.PI / 4)];
     const wip = group(); wip.position.set(0.04, top, -0.02); body.add(wip);
     const bar = progressBar(1.35);
     let wipKey = null;
@@ -339,14 +361,16 @@ const builders = {
       body, ui: bar,
       update(c, t) {
         for (const k in trays) showCount(trays[k], c.inv[k]);
-        const p = c.job ? 1 - c.job.left / TIMES.assemble : -1;
+        const p = c.job ? Math.max(0, 1 - c.job.left / assembleTime(c)) : -1; // mejorada a mitad de un trabajo: arranca de cero
         bar.userData.set(c.job && c.job.left > 0 ? p : -1);
         const key = c.job ? c.job.recipeKey : null;
         if (key !== wipKey) { wip.clear(); if (key) wip.add(burger(key)); wipKey = key; }
         if (key) { const layers = wip.children[0].userData.layers; showCount(layers, Math.ceil(Math.max(0, p) * layers.length)); }
-        const work = c.job ? Math.sin(t * 7) : 0;
-        arm.rotation.z = c.job ? -0.55 + work * 0.12 : -0.15;
-        fore.rotation.z = c.job ? -1.25 - work * 0.25 : -2.2;
+        robots.forEach(({ arm, fore }, i) => { // los dos brazos van a contratiempo
+          const work = c.job ? Math.sin(t * 7 + i * Math.PI) : 0;
+          arm.rotation.z = c.job ? -0.55 + work * 0.12 : -0.15;
+          fore.rotation.z = c.job ? -1.25 - work * 0.25 : -2.2;
+        });
       },
     };
   },
@@ -374,10 +398,12 @@ function source(mat, makeFood, foodH) {
   return { body };
 }
 
-export function buildMachine(kind) {
-  const { body, ui, update } = builders[kind]();
+/** up: la máquina tiene su mejora (cambia el modelo y lleva el banderín). */
+export function buildMachine(kind, up = false) {
+  const { body, ui, update } = builders[kind](up);
   const root = group(body);
   if (ui) root.add(ui);
+  if (up) root.add(pennant());
   root.userData = { body, ui, update };
   return root;
 }

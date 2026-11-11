@@ -39,6 +39,10 @@ const actions = {
   closeInspector() { select(null); },
   rotateSelected() { const c = selectedCell(); if (c) sim.place(game, ui.selected.x, ui.selected.y, c.kind, (c.dir + 1) % 4); },
   eraseSelected() { if (ui.selected) sim.erase(game, ui.selected.x, ui.selected.y); },
+  upgradeSelected() {
+    const c = selectedCell();
+    if (c && sim.upgrade(game, ui.selected.x, ui.selected.y).reason === 'money') noMoney(sim.upgradeCost(game, c.kind));
+  },
   askRestart() {
     hud.confirm(t('confirmRestartTitle'), t('confirmRestartBody'), t('actRestart'), () => begin(game.mode, true));
   },
@@ -97,7 +101,7 @@ const noMoney = price => hud.toast(t('toastNoMoney', { n: price - game.money }))
 function netPrice(cell, kind) {
   const cur = sim.at(game, cell.x, cell.y);
   if (cur?.kind === kind) return 0;
-  return sim.cost(game, kind) - (cur ? sim.refund(game, cur.kind) : 0);
+  return sim.cost(game, kind) - (cur ? sim.refund(game, cur) : 0);
 }
 
 function hover(cell) {

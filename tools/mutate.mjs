@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const MUTATIONS = [
-  ['borrar devuelve todo en vez de la mitad', 'src/sim.js', 's.money += refund(s, cur.kind);', 's.money += cost(s, cur.kind);'],
+  ['borrar devuelve todo en vez de la mitad', 'src/sim.js', 's.money += refund(s, cur);', 's.money += cost(s, cur.kind);'],
   ['construir no cobra', 'src/sim.js', '  s.money -= price;\n  put(s, x, y, kind, dir);', '  put(s, x, y, kind, dir);'],
   ['se construye sin dinero', 'src/sim.js', "if (isCareer(s) && s.money < price) return { ok: false, reason: 'money' };\n  if (cur)", 'if (cur)'],
   ['girar reconstruye la máquina', 'src/sim.js', '    cur.dir = dir;\n    return { ok: true };', '    put(s, x, y, kind, dir);\n    return { ok: true };'],
@@ -29,7 +29,7 @@ const MUTATIONS = [
   ['el acumulado no decae', 'src/sim.js', 'd.work *= keep; d.blocked *= keep; d.wait *= keep; d.idle *= keep;', ''],
   ['el diagnóstico decae con otro tiempo', 'src/data.js', 'tau: 60,', 'tau: 600,'],
   ['una cinta con su producto quieto cuenta como trabajando', 'src/sim.js', "return (c.item && c.item.readyAt <= s.time) || (c.item2 && c.item2.readyAt <= s.time) ? 'blocked' : 'work';", "return 'work';"],
-  ['la parrilla con la carne lista y sin lugar no cuenta como trabada', 'src/sim.js', "if (c.processing === 0 || (c.cooked > 0 && c.cooldown <= 0)) return 'blocked';", ''],
+  ['la parrilla con la carne lista y sin lugar no cuenta como trabada', 'src/sim.js', "if (c.cooking.length || (c.cooked > 0 && c.cooldown <= 0)) return 'blocked';", ''],
   ['la armadora con la salida ocupada no cuenta como trabada', 'src/sim.js', "if (c.output && c.cooldown <= 0) return 'blocked';", ''],
   ['la armadora sin ingredientes no cuenta como esperando', 'src/sim.js', "return s.orders.some(o => o.status === 'pending') ? 'wait' : 'idle';", "return 'idle';"],
   ['una fuente que no puede sacar no cuenta como trabada', 'src/sim.js', "return !src.onDemand || own() > 0 ? 'blocked' : 'idle';", "return 'idle';"],
@@ -76,6 +76,19 @@ const MUTATIONS = [
   ['borrar el puente no devuelve el pedido del segundo carril', 'src/sim.js', 'c.item2?.orderId, c.output', 'c.output'],
   ['lo varado en una cinta sin salida cuenta como lo que viaja', 'src/sim.js', 'else if (exits(c, item.d).some(d => arrives(s, x, y, d, item.type))) loose', 'else loose'],
   ['el puente trabado en su segundo carril no cuenta como trabado', 'src/sim.js', ' || (c.item2 && c.item2.readyAt <= s.time)', ''],
+  // etapa 4: mejoras de máquina
+  ['la mejora no cobra', 'src/sim.js', '  s.money -= price;\n  c.up = true;', '  c.up = true;'],
+  ['se mejora sin dinero', 'src/sim.js', "if (isCareer(s) && s.money < price) return { ok: false, reason: 'money' };\n  s.money -= price;\n  c.up", 's.money -= price;\n  c.up'],
+  ['se mejora dos veces', 'src/sim.js', "  if (c.up) return { ok: false, reason: 'done' };\n", ''],
+  ['se mejora cualquier máquina', 'src/sim.js', "  if (!UPGRADES[c.kind]) return { ok: false, reason: 'none' };\n", ''],
+  ['en modo libre mejorar cobra', 'src/sim.js', '(isCareer(s) ? UPGRADES[kind].cost : 0)', 'UPGRADES[kind].cost'],
+  ['el reembolso olvida la mejora', 'src/sim.js', '(c.up ? upgradeCost(s, c.kind) : 0)', '0'],
+  ['la doble hornalla cocina de a una', 'src/sim.js', '(c.up ? UPGRADES.grill.burners : 1)', '1'],
+  ['el segundo brazo no acelera', 'src/sim.js', '(c.up ? UPGRADES.assembly.assemble : TIMES.assemble)', 'TIMES.assemble'],
+  ['los estantes no agrandan el almacén', 'src/sim.js', '(c.up ? UPGRADES.stock.stock : CAP.stock)', 'CAP.stock'],
+  ['reemplazar conserva la mejora', 'src/sim.js', '  put(s, x, y, kind, dir);\n  return { ok: true };', '  put(s, x, y, kind, dir);\n  if (cur) at(s, x, y).up = cur.up;\n  return { ok: true };'],
+  ['girar pierde la mejora', 'src/sim.js', '    cur.dir = dir;\n    return { ok: true };', '    cur.dir = dir;\n    cur.up = false;\n    return { ok: true };'],
+  ['guardar pierde la mejora', 'src/sim.js', 'JSON.stringify({ ...s, events: [] })', 'JSON.stringify({ ...s, events: [], cells: s.cells.map(c => c && { ...c, up: false }) })'],
 ];
 
 const TIMEOUT = 60000;

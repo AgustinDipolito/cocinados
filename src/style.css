@@ -161,6 +161,8 @@ progress::-moz-progress-bar { background: var(--ok); }
 .shares .cap { flex-basis: 100%; font-size: var(--fs-xs); color: var(--ink-soft); }
 #insActions { display: flex; flex-wrap: wrap; gap: var(--gap); margin-top: var(--pad); }
 #insActions:empty { display: none; }
+#insActions .price { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+#insActions .short .price { color: var(--bad); } /* sin plata: el precio dice cuánto falta, además del color */
 #log { padding-block: 0; }
 #log summary { font-weight: 600; cursor: pointer; min-height: var(--touch); align-content: center; }
 #log[open] { padding-bottom: var(--pad); }

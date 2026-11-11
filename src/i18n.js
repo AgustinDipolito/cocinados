@@ -69,6 +69,7 @@ export const STRINGS = {
     laneEmpty: 'vacío',
     insGrill: 'Carne cruda en espera: {raw} de {rawMax}. Cocidas: {cooked} de {cookedMax}.',
     insGrillBusy: 'Cocinando, faltan {s} s.',
+    insGrillBusyMany: 'Cocinando {n} de {max} a la vez. La próxima sale en {s} s.',
     insGrillIdle: 'Parrilla libre.',
     insGrillFull: 'Carne lista: no sale porque las cocidas están al tope.',
     insStock: 'Carnes guardadas: {n} de {max}. Los pedidos en espera necesitan {need}.',
@@ -82,6 +83,11 @@ export const STRINGS = {
     sharesTitle: 'Último minuto',
     share_work: 'Trabajo', share_blocked: 'Bloqueo', share_wait: 'Espera', share_idle: 'Sin uso',
     percent: '{n} %',
+    actUpgrade: 'Mejorar', upShort: '${price}, faltan ${n}',
+    upHint_grill: 'Mejora: doble hornalla, cocina {burners} carnes a la vez.',
+    upHint_assembly: 'Mejora: segundo brazo, arma cada pedido en {time} s en vez de {baseTime} s.',
+    upHint_stock: 'Mejora: estantes, guarda {stock} carnes en vez de {baseStock}.',
+    upDone_grill: 'Mejorada: doble hornalla.', upDone_assembly: 'Mejorada: segundo brazo.', upDone_stock: 'Mejorado: estantes.',
 
     logTitle: 'Actividad',
     logReady: 'Cocina lista.',
@@ -117,7 +123,7 @@ export const STRINGS = {
     overLost: 'Clientes perdidos por demora: {expired}. Por encontrar la cola llena: {turned}.',
 
     helpGoal: 'Entregá cada pedido antes de que se le acabe el tiempo. La carne sale del proveedor, se cocina en la parrilla, espera en el almacén y va a la armadora. El pan y el queso salen cuando un pedido los necesita.',
-    helpBuild: 'Elegí una máquina de la barra y tocá una celda. Las cintas se dibujan arrastrando y toman la dirección del arrastre. Cada máquina saca su producto por el lado de la flecha amarilla. El divisor reparte una cinta entre varias salidas y el puente deja cruzar dos cintas.',
+    helpBuild: 'Elegí una máquina de la barra y tocá una celda. Las cintas se dibujan arrastrando y toman la dirección del arrastre. Cada máquina saca su producto por el lado de la flecha amarilla. El divisor reparte una cinta entre varias salidas y el puente deja cruzar dos cintas. La parrilla, la armadora y el almacén se mejoran una vez desde el inspector.',
     helpCareer: 'En Carrera, cada entrega paga y te acerca al nivel siguiente, donde los clientes llegan más seguido. Un cliente que se va sin su pedido te saca un punto de reputación. Sin puntos, la cocina cierra.',
     helpKeys: 'Teclado: R gira, Espacio pausa, Esc vuelve a Inspeccionar, las flechas mueven el cursor, Enter construye, Supr borra, WASD mueve la cámara, + y − acercan y alejan. Mouse: clic derecho borra, la rueda acerca y el botón del medio arrastra la vista.',
 
@@ -194,6 +200,7 @@ export const STRINGS = {
     laneEmpty: 'empty',
     insGrill: 'Raw meat waiting: {raw} of {rawMax}. Cooked: {cooked} of {cookedMax}.',
     insGrillBusy: 'Cooking, {s} s left.',
+    insGrillBusyMany: 'Cooking {n} of {max} at once. Next one done in {s} s.',
     insGrillIdle: 'Grill is free.',
     insGrillFull: 'Patty done: it stays on the grill because the cooked tray is full.',
     insStock: 'Patties stored: {n} of {max}. Waiting orders need {need}.',
@@ -207,6 +214,11 @@ export const STRINGS = {
     sharesTitle: 'Last minute',
     share_work: 'Working', share_blocked: 'Blocked', share_wait: 'Starved', share_idle: 'Idle',
     percent: '{n}%',
+    actUpgrade: 'Upgrade', upShort: '${price}, ${n} short',
+    upHint_grill: 'Upgrade: double burner, cooks {burners} patties at once.',
+    upHint_assembly: 'Upgrade: second arm, assembles each order in {time} s instead of {baseTime} s.',
+    upHint_stock: 'Upgrade: shelves, holds {stock} patties instead of {baseStock}.',
+    upDone_grill: 'Upgraded: double burner.', upDone_assembly: 'Upgraded: second arm.', upDone_stock: 'Upgraded: shelves.',
 
     logTitle: 'Activity',
     logReady: 'Kitchen ready.',
@@ -242,7 +254,7 @@ export const STRINGS = {
     overLost: 'Customers lost to slow orders: {expired}. To a full queue: {turned}.',
 
     helpGoal: 'Deliver every order before its time runs out. Meat leaves the supplier, cooks on the grill, waits in storage and goes to the assembler. Buns and cheese come out when an order needs them.',
-    helpBuild: 'Pick a machine from the bar and tap a cell. Belts are drawn by dragging and take the direction of the drag. Every machine puts its product out on the side of the yellow arrow. The splitter shares one belt among several outputs and the bridge lets two belts cross.',
+    helpBuild: 'Pick a machine from the bar and tap a cell. Belts are drawn by dragging and take the direction of the drag. Every machine puts its product out on the side of the yellow arrow. The splitter shares one belt among several outputs and the bridge lets two belts cross. The grill, the assembler and the storage can be upgraded once from the inspector.',
     helpCareer: 'In Career, every delivery pays and brings you closer to the next level, where customers arrive more often. A customer who leaves without their order costs a reputation point. With no points left, the kitchen closes.',
     helpKeys: 'Keyboard: R rotates, Space pauses, Esc goes back to Inspect, arrows move the cursor, Enter builds, Delete removes, WASD moves the camera, + and − zoom. Mouse: right click removes, the wheel zooms and the middle button drags the view.',
 

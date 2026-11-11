@@ -28,7 +28,14 @@ export const KINDS = {
   assembly: { cost: 90 },
   dispatch: { cost: 50 },
 };
-export const BUILD_ORDER = ['belt', 'splitter', 'bridge', 'raw', 'bun', 'cheese', 'grill', 'stock', 'assembly', 'dispatch'];
+// Mejoras: un solo nivel por máquina, se compran desde el inspector. burners: carnes a la vez en la parrilla ·
+// assemble: segundos por pedido en la armadora · stock: carnes que guarda el almacén.
+export const UPGRADES = {
+  grill:    { cost: 140, burners: 2 },
+  assembly: { cost: 180, assemble: 2.5 },
+  stock:    { cost: 60, stock: 16 },
+};
+export const BUILD_ORDER =['belt', 'splitter', 'bridge', 'raw', 'bun', 'cheese', 'grill', 'stock', 'assembly', 'dispatch'];
 
 // Qué fuente hace falta para cada ingrediente de una receta.
 export const SOURCE_OF = { bun: 'bun', patty: 'raw', cheese: 'cheese' };
