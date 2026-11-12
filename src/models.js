@@ -439,7 +439,12 @@ export function buildCustomer(look) {
 }
 
 // ---------- el local ----------
-export function buildLot(W, H) {
+/**
+ * Piso, paredes y vereda del local. hole(x, y): la celda está fuera del local (no se dibuja como piso y su
+ * borde lleva pared) · pillar(x, y): columna. Las paredes van por cada borde norte, oeste y este entre piso y
+ * lo que no es piso; el frente (sur) queda abierto hacia la vereda.
+ */
+export function buildLot(W, H, hole = () => false, pillar = () => false) {
   const g = group();
   const tex = floorTexture.clone();
   tex.repeat.set(W / 2, H / 2);
@@ -449,15 +454,26 @@ export function buildLot(W, H) {
   const slab = box(W + 1, 0.5, H + 1, std(C.slab, 0.8), W / 2, -0.26, H / 2, 0.12);
   const wallM = std(C.wall, 0.9), band = toy(C.wainscot);
   const glass = std(C.window, 0.2, 0, { emissive: C.window, emissiveIntensity: 0.55 });
-  g.add(floor, slab,
-    box(W + 0.5, 1.9, 0.25, wallM, W / 2, 0.95, -0.125, 0.04), box(W + 0.52, 0.62, 0.27, band, W / 2, 0.31, -0.125, 0.04),
-    box(0.25, 0.7, H + 0.25, wallM, -0.125, 0.35, H / 2 - 0.125, 0.04), box(0.25, 0.7, H + 0.25, wallM, W + 0.125, 0.35, H / 2 - 0.125, 0.04),
-  );
+  const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H && !hole(x, y);
+  g.add(floor, slab);
+  // cada tramo de pared junta las celdas seguidas que tienen el mismo borde (una pared por tramo, sin costuras)
+  const runs = (n, edge, f) => { for (let i = 0, a = -1; i <= n; i++) { const on = i < n && edge(i); if (on && a < 0) a = i; if (!on && a >= 0) { f(a, i); a = -1; } } };
+  for (let y = 0; y < H; y++) runs(W, x => inside(x, y) && !inside(x, y - 1), (a, b) => g.add( // pared del fondo, alta
+    box(b - a + 0.5, 1.9, 0.25, wallM, (a + b) / 2, 0.95, y - 0.125, 0.04), box(b - a + 0.52, 0.62, 0.27, band, (a + b) / 2, 0.31, y - 0.125, 0.04)));
+  for (let x = 0; x <= W; x++) for (const [side, dx] of [[x, -1], [x - 1, 1]]) // pared de costado, baja: al oeste y al este del piso
+    runs(H, y => inside(side, y) && !inside(side + dx, y), (a, b) => g.add(box(0.25, 0.7, b - a + 0.25, wallM, x + dx * 0.125, 0.35, (a + b) / 2 - 0.125, 0.04)));
+  const outside = std(C.bg, 0.9);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (hole(x, y)) { // tapa el piso y el borde de la losa: se ve el fondo, como fuera del local
+      const x0 = x ? x : -0.6, x1 = x < W - 1 ? x + 1 : W + 0.6, z0 = y ? y : -0.6;
+      g.add(box(x1 - x0, 0.6, y + 1 - z0, outside, (x0 + x1) / 2, -0.29, (z0 + y + 1) / 2, 0.01));
+    } else if (pillar(x, y)) g.add(box(0.72, 2.3, 0.72, wallM, x + 0.5, 1.15, y + 0.5, 0.06), box(0.76, 0.62, 0.76, band, x + 0.5, 0.31, y + 0.5, 0.06));
+  }
   const c = curb({ W, H }), cx = (c.x0 + c.x1) / 2; // la vereda del frente, donde hace fila la gente
   g.add(box(c.x1 - c.x0, 0.5, c.z1 - c.z0, std(C.sidewalk, 0.85), cx, -0.25, (c.z0 + c.z1) / 2, 0.1),
     box(c.x1 - c.x0, 0.08, 0.14, std(C.curb, 0.8), cx, 0, c.z1 - 0.07, 0.03));
-  for (let x = 2; x + 1.5 <= W; x += 4) { // una ventana cada cuatro celdas
-    g.add(box(1.7, 0.8, 0.06, M.wood, x + 0.75, 1.25, 0.01, 0.06), box(1.5, 0.62, 0.08, glass, x + 0.75, 1.25, 0.02, 0.04));
+  for (let x = 2; x + 1.5 <= W; x += 4) { // una ventana cada cuatro celdas, donde la pared del fondo es la del frente del terreno
+    if (inside(x, 0) && inside(x + 1, 0)) g.add(box(1.7, 0.8, 0.06, M.wood, x + 0.75, 1.25, 0.01, 0.06), box(1.5, 0.62, 0.08, glass, x + 0.75, 1.25, 0.02, 0.04));
   }
   return g;
 }

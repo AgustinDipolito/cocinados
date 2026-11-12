@@ -26,12 +26,12 @@ voseo, sin exclamaciones). `npm run shots`: sobre el juego armado y dibujado mid
 fuera de la ventana (caja pintada), tamaños de letra contra los seis de la ficha, la letra que cargó,
 toque mínimo, nombre de cada control, clases sin regla, textos sin resolver, bloques de prosa, y que
 cada herramienta tenga su miniatura; además juega con clics y toques de verdad (construir, ampliar,
-perder, guardar, recargar y continuar, cambiar de partida). `node tools/mutate.mjs`: rompe el código
+perder, elegir local cerrado y abierto y jugar cada local nuevo, guardar, recargar y continuar, cambiar de partida). `node tools/mutate.mjs`: rompe el código
 de a una cosa y exige que `npm test` se ponga rojo.
 
 **Componentes.** `box`/`cyl`/`stack`/`progressBar`/`outArrow` en `src/models.js` para armar modelos;
 `buildMachine(kind)`, `buildItem(item)`, `burger(receta)`. En el HUD (`src/hud.js`): `stat`, `btn`,
-`tool`, `img` (miniatura), `confirm(título, consecuencia, acción)`, `toast`, `floater`, `pct` (proporción
+`tool`, `img` (miniatura), `plan(local)` (mini plano SVG desde la máscara), `confirm(título, consecuencia, acción)`, `toast`, `floater`, `pct` (proporción
 como «62 %»). Diagnóstico en `src/sim.js`: `diagShares(celda)` (proporciones `{ work, blocked, wait, idle }`
 o null), `bottleneck(s)` (`{ x, y, kind, shares, upstream }` o null), `upstreamBlocked(s, x, y)`, `lost(s)`
 (perdidos por plazo más por cola llena). En la escena, `setJams(on)` y `shownJams()` (para el arnés).
@@ -71,6 +71,9 @@ lea el valor base pasa a leer ése), su pieza en el constructor del modelo (`bui
 dos idiomas (familia en `test/i18n.test.js`).
 Una receta: `RECIPES`, `SANDBOX_DEADLINE` y `recipe_`. Un ingrediente: `INGREDIENTS`, `SOURCE_OF`,
 `buildItem`, `item_` y la familia en `test/i18n.test.js`.
+Un local nuevo se anota en: `LOTS` (tamaño, `holes`, `pillars`, `kitchen`, `fixed`, `grow`, `unlock`) y, si es de
+Carrera, `CAREER_LOTS` (`data.js`); `lot_` en los dos idiomas; su prueba de primera entrega sale sola de `CAREER_LOTS`
+en `test/lots.test.js`. Los agujeros van arriba o a la izquierda (ampliar suma piso a la derecha y abajo).
 
 **Circuito.** Un dato del juego vive en el estado de `sim.js`, viaja al guardado con `serialize`,
 vuelve con `deserialize` (que descarta versiones viejas: subir `SAVE_VERSION` al cambiar la forma),
@@ -83,7 +86,9 @@ y se lee en el HUD (`hud.js`) o en la escena (`scene.js`). Lo que no es del jueg
 - La escena y el HUD dibujan el estado; no deciden nada del juego. Lo que pasa se anuncia en `state.events`.
 - Todo el balance está en `data.js`.
 - En Carrera los clientes piden sólo lo que la cocina ofrece (receta desbloqueada y con sus fuentes).
-- Ampliar el terreno no mueve nada de lo construido.
+- Ampliar el terreno no mueve nada de lo construido, y lo que no era piso sigue sin serlo.
+- Una celda que no es piso vale `false` en `s.cells` (null es piso vacío): `valid` la rechaza y `at` la da null, así queda
+  inerte en todo recorrido del motor. Una máquina fija (`fixed` en la celda) no se borra, ni se reemplaza, ni se gira.
 - Girar una máquina es gratis y no pierde su contenido.
 
 **Lecciones.**
@@ -124,6 +129,10 @@ navegador (`npm run shots`) no corre ahí: se corre a mano antes de subir.
 - El aviso rojo en una cinta es sólo para un producto sin salida, no para una cinta frenada por una máquina llena.
 - La armadora elige el pedido más urgente que pueda completar (regla del prototipo): una doble puede esperar mientras salen simples.
 - Sin sonido por ahora.
+- Locales con forma: la forma es el nivel. Un local es datos (`LOTS`) y no sabe de modos, para que un desafío sea un local
+  más. El clásico es la Carrera de antes, celda por celda; el Modo libre conserva su terreno (`LOTS.sandbox`). Cada local
+  se abre con nivel 4 en el anterior, leído del récord, que es por local (`best.<local>`; el de El clásico sigue en `best`).
+  El récord se escribe al cerrar la cocina, como antes: llegar al nivel 4 y salir sin perder todavía no abre el siguiente.
 - Diagnóstico de cuello de botella: cada celda lleva `diag` (segundos recientes en trabajo, bloqueo, espera y
   libre), que decae con `DIAG.tau` = 60 s y se actualiza al final de `step` leyendo lo que quedó en la celda.
   Se guarda, girar lo conserva, reemplazar o borrar lo pierde. El cuello es la máquina (no cinta) con más

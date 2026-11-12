@@ -209,6 +209,12 @@ dialog.sheet::backdrop { background: var(--scrim); }
 .mode { display: grid; gap: var(--gap); align-content: start; border-top: var(--border) solid var(--line); padding-top: var(--pad); }
 .mode h2 { display: flex; align-items: center; gap: var(--gap); font-size: var(--fs-lg); font-weight: 600; }
 .mode p { font-size: var(--fs-sm); }
+.lots { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: var(--gap); }
+.lotBtn { justify-content: flex-start; padding: 0 var(--gap); font-size: var(--fs-sm); }
+.plan { width: 36px; height: 24px; flex: none; }
+.plan .floor { fill: var(--line); }
+.plan .mark { fill: var(--ink); }
+.lotBtn .ico { margin-left: auto; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap); }
 .row.between { justify-content: space-between; }
 .row.end { justify-content: flex-end; }

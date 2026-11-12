@@ -276,9 +276,39 @@ await pool(runs, async ([lang, vp]) => {
     return p.includes(String(s.expired)) && p.includes(String(s.turnedAway)); }), 'la hoja de cierre no reparte los clientes perdidos');
   await shot('6-fin');
 
-  // Modo libre: la cocina del prototipo.
+  // Locales: sin récord en El clásico, El pasillo está cerrado y dice qué falta; con nivel 4 en cada uno se abren todos.
   await click('#dlgOver [data-act=exit]');
   await ready();
+  await click('[data-act=pickLot][data-arg=hall]');
+  await until('local cerrado elegido', () => document.querySelector('[data-arg=hall][aria-pressed=true]'));
+  check(where, 'local cerrado', await page.evaluate(() => document.querySelector('[data-act=startNew][data-arg=career]').disabled), 'deja empezar un local cerrado');
+  await shot('6b-local-cerrado');
+  await page.evaluate(() => { for (const k of ['best', 'best.hall', 'best.corner', 'best.columns']) localStorage.setItem('bb.' + k, JSON.stringify({ level: 4, earned: 400 })); });
+  for (const lot of ['hall', 'corner', 'columns', 'island']) {
+    await click(`[data-act=pickLot][data-arg=${lot}]`);
+    await until('local abierto elegido', l => document.querySelector(`[data-arg=${l}][aria-pressed=true]`) && !document.querySelector('[data-act=startNew][data-arg=career]').disabled, lot);
+    if (lot === 'hall') await shot('6c-locales');
+    await click('[data-act=startNew][data-arg=career]');
+    if (await page.evaluate(() => !!document.querySelector('#dlgConfirm[open]'))) await click('[data-act=confirmOk]');
+    await noDialog();
+    await page.evaluate(() => window.__bb.advance(45));
+    await click('[data-act=togglePause]');
+    await until('primera entrega del local, en pausa', l => window.__bb.game.lot === l && window.__bb.game.stats.onTime > 0 && !document.querySelector('#status').hidden, lot);
+    if (lot === 'corner') { // tocar donde no hay piso no elige nada
+      await clickCell(2, 2);
+      await frames();
+      check(where, 'local con forma', await page.evaluate(() => !window.__bb.ui.selected), 'se eligió una celda sin piso');
+    }
+    if (lot === 'island') { // la máquina fija se inspecciona, pero no se borra ni se gira
+      await clickCell(6, 3);
+      await until('inspector del despacho fijo', () => window.__bb.ui.selected?.x === 6 && !document.querySelector('#inspector').hidden);
+      check(where, 'máquina fija', await page.evaluate(() => !document.querySelector('[data-act=eraseSelected], [data-act=rotateSelected]')), 'la máquina fija ofrece borrar o girar');
+    }
+    await shot(`6d-local-${lot}`);
+    await click('#controls [data-act=exit]');
+    await ready();
+  }
+  // Modo libre: la cocina del prototipo.
   await click('[data-act=startNew][data-arg=sandbox]');
   await noDialog();
   await page.evaluate(() => window.__bb.advance(70));

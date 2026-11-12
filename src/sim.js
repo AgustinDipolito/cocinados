@@ -3,10 +3,10 @@
 import {
   DIRS, BELT_TIME, STUCK_AFTER, QUEUE_MAX, LATE_PAY, GRACE, HEARTS, REFUND, CAP, TIMES, KINDS,
   SOURCE_OF, INGREDIENTS, RECIPES, SANDBOX_DEADLINE, SANDBOX_INTERVAL, START_MONEY, orderInterval,
-  deliveriesFor, LOT, DIAG, UPGRADES,
+  deliveriesFor, LOT, LOTS, DIAG, UPGRADES,
 } from './data.js';
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 function rand(s) { // mulberry32: el azar sale de la semilla guardada, así una partida se puede repetir
   s.seed = (s.seed + 0x6D2B79F5) | 0;
@@ -25,7 +25,9 @@ const make = (kind, dir = 0) => ({
   diag: { work: 0, blocked: 0, wait: 0, idle: 0 }, // segundos recientes en cada estado (ver track)
 });
 
-export const valid = (s, x, y) => x >= 0 && x < s.W && y >= 0 && y < s.H;
+// Una celda que no es piso (agujero o columna del local) vale false en s.cells: no es válida, at() la da null
+// y así queda inerte en todo recorrido. null es piso vacío.
+export const valid = (s, x, y) => x >= 0 && x < s.W && y >= 0 && y < s.H && s.cells[y * s.W + x] !== false;
 export const at = (s, x, y) => (valid(s, x, y) ? s.cells[y * s.W + x] : null);
 const put = (s, x, y, kind, dir = 0) => { s.cells[y * s.W + x] = make(kind, dir); };
 const emit = (s, type, data) => s.events.push({ type, ...data });
@@ -42,34 +44,32 @@ export const stockCap = c => (c.up ? UPGRADES.stock.stock : CAP.stock);
 export const assembleTime = c => (c.up ? UPGRADES.assembly.assemble : TIMES.assemble);
 export const expandCost = s => (isCareer(s) ? LOT.cost(s.expansions) : 0);
 export const canExpand = s => s.expansions < LOT.maxExpansions;
+/** [ancho, alto] que suma cada ampliación del local de la partida. */
+export const lotGrow = s => LOTS[s.lot].grow ?? [LOT.growW, LOT.growH];
+/** Si el local está abierto. best(local): el récord { level } de ese local, o null. */
+export const lotOpen = (key, best) => !LOTS[key].unlock || (best(LOTS[key].unlock[0])?.level ?? 0) >= LOTS[key].unlock[1];
 export const deadline = (s, key) => (isCareer(s) ? RECIPES[key].deadline : SANDBOX_DEADLINE[key]);
 export const delivered = s => s.stats.onTime + s.stats.late;
 export const lost = s => s.stats.expired + s.stats.turnedAway;
 
-function starterKitchen(s) {
-  const row = (y, x0, x1, dir = 0) => { for (let x = x0; x <= x1; x++) put(s, x, y, 'belt', dir); };
-  const col = (x, y0, y1, dir) => { for (let y = y0; y <= y1; y++) put(s, x, y, 'belt', dir); };
-  if (isCareer(s)) { // una sola línea: clásica. El queso lo construye quien juega al llegar al nivel 2.
-    put(s, 1, 1, 'raw'); put(s, 2, 1, 'belt'); put(s, 3, 1, 'grill'); put(s, 4, 1, 'belt');
-    put(s, 5, 1, 'stock'); put(s, 6, 1, 'belt'); col(7, 1, 2, 1);
-    put(s, 1, 3, 'bun'); row(3, 2, 6); put(s, 7, 3, 'assembly'); row(3, 8, 9); put(s, 10, 3, 'dispatch');
-  } else { // la cocina del prototipo, celda por celda
-    put(s, 1, 1, 'raw'); row(1, 2, 3); put(s, 4, 1, 'grill'); row(1, 5, 6); put(s, 7, 1, 'stock');
-    row(1, 8, 9); col(10, 1, 4, 1);
-    put(s, 1, 5, 'bun'); row(5, 2, 9); put(s, 10, 5, 'assembly'); row(5, 11, 13); put(s, 14, 5, 'dispatch');
-    put(s, 1, 8, 'cheese'); row(8, 2, 9); col(10, 6, 8, 3);
-  }
+/** Pone las piezas iniciales del local, marca sus máquinas fijas y lo que no es piso. */
+function buildLot(s, lot) {
+  const rects = (list, f) => { for (const [x0, y0, x1, y1] of list ?? []) for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) f(x, y); };
+  for (const [kind, x, y, dir = 0, x2 = x, y2 = y] of lot.kitchen) rects([[x, y, x2, y2]], (px, py) => put(s, px, py, kind, dir));
+  for (const [x, y] of lot.fixed ?? []) at(s, x, y).fixed = true;
+  rects(lot.holes, (x, y) => { s.cells[y * s.W + x] = false; });
+  rects(lot.pillars, (x, y) => { s.cells[y * s.W + x] = false; });
 }
 
-export function newGame(mode = 'career', seed = 1) {
-  const { w, h } = LOT[mode];
+export function newGame(mode = 'career', seed = 1, lot = mode === 'career' ? 'classic' : 'sandbox') {
+  const { w, h } = LOTS[lot];
   const s = {
-    v: SAVE_VERSION, mode, W: w, H: h, cells: Array(w * h).fill(null), orders: [], log: [], events: [],
+    v: SAVE_VERSION, mode, lot, W: w, H: h, cells: Array(w * h).fill(null), orders: [], log: [], events: [],
     time: 0, autoClock: 0, autoOrders: true, orderId: 1, itemId: 1, seed,
     money: mode === 'career' ? START_MONEY : 0, hearts: HEARTS, level: 1, expansions: 0, over: false,
     stats: { onTime: 0, late: 0, expired: 0, turnedAway: 0, waste: 0, earned: 0 },
   };
-  starterKitchen(s);
+  buildLot(s, LOTS[lot]);
   for (const key of isCareer(s) ? ['classic'] : ['classic', 'cheese', 'double']) addOrder(s, key);
   s.log.length = 0;
   log(s, 'logReady');
@@ -231,11 +231,12 @@ function loseContents(s, c) {
   }
 }
 
-/** Devuelve { ok } o { ok:false, reason } con reason 'same' | 'money' | 'out'. */
+/** Devuelve { ok } o { ok:false, reason } con reason 'same' | 'money' | 'out' | 'fixed' (máquina fija del local). */
 export function place(s, x, y, kind, dir = 0) {
   if (!valid(s, x, y) || s.over) return { ok: false, reason: 'out' };
   if (KINDS[kind].noTurn) dir = 0; // el puente no tiene frente: girarlo no cambia nada
   const cur = at(s, x, y);
+  if (cur?.fixed) return { ok: false, reason: 'fixed' };
   if (cur && cur.kind === kind) { // misma máquina: sólo se gira, gratis y sin perder lo que tiene
     if (cur.dir === dir) return { ok: false, reason: 'same' };
     cur.dir = dir;
@@ -251,7 +252,7 @@ export function place(s, x, y, kind, dir = 0) {
 
 export function erase(s, x, y) {
   const cur = at(s, x, y);
-  if (!cur || s.over) return false;
+  if (!cur || cur.fixed || s.over) return false;
   loseContents(s, cur);
   s.money += refund(s, cur);
   s.cells[y * s.W + x] = null;
@@ -274,12 +275,12 @@ export function upgrade(s, x, y) {
   return { ok: true };
 }
 
-/** El terreno crece hacia la derecha y hacia abajo: nada de lo construido cambia de celda. */
+/** El terreno crece hacia la derecha y hacia abajo: nada de lo construido cambia de celda, y lo que no era piso sigue sin serlo. */
 export function expand(s) {
   if (!canExpand(s) || s.over) return { ok: false, reason: 'max' };
   const price = expandCost(s);
   if (isCareer(s) && s.money < price) return { ok: false, reason: 'money' };
-  const W = s.W + LOT.growW, H = s.H + LOT.growH, cells = Array(W * H).fill(null);
+  const [gw, gh] = lotGrow(s), W = s.W + gw, H = s.H + gh, cells = Array(W * H).fill(null);
   for (let y = 0; y < s.H; y++) for (let x = 0; x < s.W; x++) cells[y * W + x] = s.cells[y * s.W + x];
   Object.assign(s, { W, H, cells, money: s.money - price, expansions: s.expansions + 1 });
   emit(s, 'expanded');

@@ -1,14 +1,15 @@
 // La escena 3D: dibuja el estado de la simulación, no decide nada del juego.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { BELT_TIME, BUILD_ORDER, RECIPES, DIAG } from './data.js';
-import { isStuck, diagShares } from './sim.js';
+import { BELT_TIME, BUILD_ORDER, RECIPES, DIAG, LOTS } from './data.js';
+import { isStuck, diagShares, valid } from './sim.js';
 import { C, BRIDGE_TOP, beltTexture, alertTexture, jamTexture, buildMachine, buildItem, buildLot, buildGhost, tileFrame, burger, buildCustomer } from './models.js';
 import { curb, newCrowd, stepCrowd } from './crowd.js';
 
 const PITCH = THREE.MathUtils.degToRad(54); // cuánto mira hacia abajo la cámara
 const SURFACE = { belt: 0.185, assembly: 0.47, bridge: BRIDGE_TOP + 0.005 }; // altura a la que apoya un producto (bridge: carril alto del puente)
 const smooth = p => p * p * (3 - 2 * p);
+const inRects = (list, x, y) => (list ?? []).some(([x0, y0, x1, y1]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
 
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -64,7 +65,8 @@ export function createScene(canvas) {
 
   function rebuildLot(s) {
     if (lot) world.remove(lot);
-    lot = buildLot(s.W, s.H);
+    const shape = LOTS[s.lot]; // agujeros y columnas: ampliar no los mueve, así que valen los del local
+    lot = buildLot(s.W, s.H, (x, y) => inRects(shape.holes, x, y), (x, y) => inRects(shape.pillars, x, y));
     world.add(lot);
     for (const m of machines) if (m) world.remove(m.root);
     machines = Array(s.W * s.H).fill(null);
@@ -171,7 +173,7 @@ export function createScene(canvas) {
       people.clear();
       crowd = newCrowd(); crowdT = t; // la partida nueva o recuperada arranca con cada cliente en su lugar
     }
-    const key = `${s.W}x${s.H}`;
+    const key = `${s.lot}:${s.W}x${s.H}`;
     if (key !== lotKey) { lotKey = key; rebuildLot(s); }
     syncMachines(s, t, playing);
     syncItems(s, t);
@@ -181,12 +183,12 @@ export function createScene(canvas) {
     renderer.render(scene, camera);
   }
 
-  /** Celda bajo un punto de la pantalla, o null si cae fuera del terreno. */
+  /** Celda bajo un punto de la pantalla, o null si cae fuera del terreno o en lo que no es piso. */
   function pick(s, clientX, clientY) {
     const g = groundAt(clientX, clientY);
     if (!g) return null;
     const x = Math.floor(g.x), y = Math.floor(g.z);
-    return x >= 0 && y >= 0 && x < s.W && y < s.H ? { x, y } : null;
+    return valid(s, x, y) ? { x, y } : null;
   }
 
   function groundAt(clientX, clientY) {

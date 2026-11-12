@@ -2,7 +2,7 @@
 import '@fontsource/fredoka/latin-500.css';
 import '@fontsource/fredoka/latin-600.css';
 import './style.css';
-import { STEP, DIRS, QUEUE_MAX, BUILD_ORDER, RECIPES, SOURCE_OF, INGREDIENTS, KINDS } from './data.js';
+import { STEP, DIRS, QUEUE_MAX, BUILD_ORDER, RECIPES, SOURCE_OF, INGREDIENTS, KINDS, CAREER_LOTS } from './data.js';
 import * as sim from './sim.js';
 import { createScene } from './scene.js';
 import { createHud } from './hud.js';
@@ -18,11 +18,13 @@ function applyLang(l) { setLang(l); canvas.setAttribute('aria-label', t('boardLa
 applyLang(store.get('lang') ?? (navigator.language.startsWith('es') ? 'es' : 'en'));
 
 const scene = createScene(canvas);
-const ui = { tool: 'inspect', dir: 0, selected: null, cursor: null, playing: true, speed: 1, jams: false };
+const ui = { tool: 'inspect', dir: 0, selected: null, cursor: null, playing: true, speed: 1, jams: false, lot: 'classic' }; // lot: el local elegido en el inicio
 let game = sim.newGame('career', 1), started = false, acc = 0;
 
 const loadSave = mode => sim.deserialize(store.get('save.' + mode) ?? '');
-const loadBest = () => { try { return JSON.parse(store.get('best')); } catch { return null; } };
+// El récord es por local; el de El clásico sigue en la clave de antes, así el récord guardado hasta ahora es el suyo.
+const bestKey = lot => (lot === 'classic' ? 'best' : 'best.' + lot);
+const loadBest = lot => { try { return JSON.parse(store.get(bestKey(lot))); } catch { return null; } };
 const save = () => { if (started && !game.over) store.set('save.' + game.mode, sim.serialize(game)); };
 const fit = () => scene.fit(game, hud.insets());
 
@@ -48,7 +50,9 @@ const actions = {
   },
   exit() { save(); started = false; hud.close('dlgOver'); hud.setVisible(false); showStart(); },
   start(mode) { begin(mode, false); },
+  pickLot(lot) { ui.lot = lot; showStart(); },
   startNew(mode) {
+    if (mode === 'career' && !sim.lotOpen(ui.lot, loadBest)) return;
     if (!loadSave(mode) || (started && game.over)) return begin(mode, true);
     hud.confirm(t('confirmNewTitle'), t('confirmNewBody', { mode: t(mode === 'career' ? 'modeCareer' : 'modeSandbox') }), t('actNewGame'), () => begin(mode, true));
   },
@@ -63,7 +67,10 @@ const hud = createHud(document.getElementById('ui'), actions, scene.thumbnails()
 
 document.getElementById('dlgStart').addEventListener('close', () => { if (!started) showStart(); });
 
-function showStart() { hud.showStart({ career: loadSave('career'), sandbox: loadSave('sandbox') }, loadBest()); }
+function showStart() {
+  hud.showStart({ career: loadSave('career'), sandbox: loadSave('sandbox') },
+    CAREER_LOTS.map(key => ({ key, open: sim.lotOpen(key, loadBest), best: loadBest(key) })), ui.lot);
+}
 
 // Fases de la sesión. No hay una variable de fase: se deducen, y `running` en frame() las junta.
 //   inicio    -> !started (hoja dlgStart abierta, HUD oculto)
@@ -71,7 +78,8 @@ function showStart() { hud.showStart({ career: loadSave('career'), sandbox: load
 //   en pausa  -> started && !ui.playing        · con una hoja abierta el tiempo tampoco corre
 //   cerrada   -> game.over (hoja dlgOver; ya no se guarda ni avanza)
 function begin(mode, fresh) {
-  game = (!fresh && loadSave(mode)) || sim.newGame(mode, (Date.now() & 0x7fffffff) || 1);
+  game = (!fresh && loadSave(mode)) || sim.newGame(mode, (Date.now() & 0x7fffffff) || 1, mode === 'career' ? ui.lot : undefined);
+  if (mode === 'career') ui.lot = game.lot; // «Jugar de nuevo» repite el local
   Object.assign(ui, { tool: 'inspect', dir: 0, selected: null, cursor: null, playing: true, speed: 1 });
   started = true; acc = 0;
   select(null); hover(null);
@@ -108,12 +116,13 @@ function hover(cell) {
   ui.cursor = cell;
   const cur = cell && sim.at(game, cell.x, cell.y), dir = KINDS[ui.tool]?.noTurn ? 0 : ui.dir; // el puente no gira
   const same = cur?.kind === ui.tool && cur.dir === dir; // ya está puesta así: el fantasma sólo la taparía
-  const kind = BUILD_ORDER.includes(ui.tool) && !same ? ui.tool : null;
+  const kind = BUILD_ORDER.includes(ui.tool) && !same && sim.valid(game, cell?.x, cell?.y) && !cur?.fixed ? ui.tool : null;
   scene.setHover(cell, kind, dir, !cell || !kind || game.mode !== 'career' || game.money >= netPrice(cell, kind));
 }
 
 function applyTool(cell, dir = ui.dir) {
   if (ui.tool === 'inspect') return select(cell);
+  if (sim.at(game, cell.x, cell.y)?.fixed) return hud.toast(t('toastFixed'));
   if (ui.tool === 'erase') return sim.erase(game, cell.x, cell.y);
   const r = sim.place(game, cell.x, cell.y, ui.tool, dir);
   if (r.reason === 'money') noMoney(netPrice(cell, ui.tool));
@@ -182,7 +191,7 @@ const ARROWS = { ArrowRight: 0, ArrowDown: 1, ArrowLeft: 2, ArrowUp: 3 }, CAMERA
 
 function describe(cell) {
   const c = sim.at(game, cell.x, cell.y);
-  return t('cellAnnounce', { ...cell, what: c ? t('kindLong_' + c.kind) : t('cellEmpty') });
+  return t('cellAnnounce', { ...cell, what: c ? t('kindLong_' + c.kind) : sim.valid(game, cell.x, cell.y) ? t('cellEmpty') : t('cellBlocked') });
 }
 
 addEventListener('keydown', e => {
@@ -231,8 +240,8 @@ function drainEvents() {
     else if (ev.type === 'queueFull') hud.toast(t('toastQueueFull', { n: QUEUE_MAX }));
     else if (ev.type === 'expanded') { hud.update(game, ui); fit(); hud.toast(t('toastExpanded')); }
     else if (ev.type === 'gameover') {
-      const best = loadBest(), isBest = !best || game.level > best.level || (game.level === best.level && game.stats.earned > best.earned);
-      if (isBest) store.set('best', JSON.stringify({ level: game.level, earned: game.stats.earned }));
+      const best = loadBest(game.lot), isBest = !best || game.level > best.level || (game.level === best.level && game.stats.earned > best.earned);
+      if (isBest) store.set(bestKey(game.lot), JSON.stringify({ level: game.level, earned: game.stats.earned }));
       store.set('save.career', null);
       hud.showOver(game, isBest);
     }

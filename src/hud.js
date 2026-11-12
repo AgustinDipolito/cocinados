@@ -1,6 +1,6 @@
 // El HUD es HTML encima del lienzo 3D. Lee el estado y avisa los toques con actions.*; no toca la simulación.
-import { BUILD_ORDER, RECIPES, KINDS, CAP, UPGRADES, QUEUE_MAX, HEARTS, LOT, deliveriesFor } from './data.js';
-import { at, cost, refund, upgradeCost, burners, stockCap, assembleTime, expandCost, canExpand, sourceNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck } from './sim.js';
+import { BUILD_ORDER, RECIPES, KINDS, CAP, UPGRADES, QUEUE_MAX, HEARTS, LOTS, deliveriesFor } from './data.js';
+import { at, cost, refund, upgradeCost, burners, stockCap, assembleTime, expandCost, canExpand, lotGrow, sourceNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck } from './sim.js';
 import { t, LANGS, getLang } from './i18n.js';
 import { orderRisk } from './crowd.js';
 
@@ -21,12 +21,21 @@ const ICON = {
   more: svg('M5 10a2 2 0 110 4 2 2 0 010-4zm7 0a2 2 0 110 4 2 2 0 010-4zm7 0a2 2 0 110 4 2 2 0 010-4z'),
   arrow: svg('M4 10.500h10V6l7 6-7 6v-4.500H4z'),
   upgrade: svg('M12 3l8 8h-5v9H9v-9H4z'),
+  lock: svg('M8 10V7a4 4 0 118 0v3h2v11H6V10zm2 0h4V7a2 2 0 10-4 0z'),
   jams: svg('M12 2l10 10-10 10L2 12zM9.4 8v8h1.8V8zM12.8 8v8h1.8V8z'), // la misma marca que la capa de atascos
 };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 export const clock = s => { s = Math.max(0, Math.floor(s)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
 const money = n => `$${n}`;
 const pct = share => t('percent', { n: Math.round(share * 100) });
+/** Mini plano de un local, trazado desde su máscara: piso claro, columnas y máquinas fijas oscuras. */
+function plan(lot) {
+  const cells = (list = []) => list.flatMap(([x0, y0, x1, y1]) => Array.from({ length: (x1 - x0 + 1) * (y1 - y0 + 1) }, (_, i) => [x0 + (i % (x1 - x0 + 1)), y0 + Math.floor(i / (x1 - x0 + 1))]));
+  const gone = new Set([...cells(lot.holes), ...cells(lot.pillars)].map(String)), sq = ([x, y]) => `M${x} ${y}h1v1h-1z`;
+  const floor = Array.from({ length: lot.w * lot.h }, (_, i) => [i % lot.w, Math.floor(i / lot.w)]).filter(c => !gone.has(String(c)));
+  return `<svg class="plan" viewBox="-0.5 -0.5 ${lot.w + 1} ${lot.h + 1}" aria-hidden="true"><path class="floor" d="${floor.map(sq).join('')}"/>
+    <path class="mark" d="${[...cells(lot.pillars), ...(lot.fixed ?? [])].map(sq).join('')}"/></svg>`;
+}
 
 export function createHud(root, actions, thumbs) {
   root.innerHTML = `
@@ -137,7 +146,7 @@ export function createHud(root, actions, thumbs) {
     h += `<span class="sep"></span>
       <button class="tool" data-act="rotate" title="${t('rotateLabel', { dir: t('dir' + ui.dir) })}" aria-label="${t('rotateLabel', { dir: t('dir' + ui.dir) })}">
         <span class="dir" style="--turn:${ui.dir * 90}deg">${ICON.arrow}</span><span class="name">${t('actRotate')}</span><span class="price">R</span></button>`;
-    const grow = canExpand(s), label = grow ? t('expandLabel', { w: s.W + LOT.growW, h: s.H + LOT.growH }) : t('expandMax');
+    const grow = canExpand(s), label = grow ? t('expandLabel', { w: s.W + lotGrow(s)[0], h: s.H + lotGrow(s)[1] }) : t('expandMax');
     h += `<button class="tool ${grow && s.mode === 'career' && s.money < expandCost(s) ? 'short' : ''}" data-act="expand" ${grow ? '' : 'disabled'} title="${label}" aria-label="${label}">
         ${ICON.expand}<span class="name">${t('actExpand')}</span><span class="price">${grow ? (expandCost(s) ? money(expandCost(s)) : t('free')) : '—'}</span></button>`;
     set('tools', h);
@@ -164,6 +173,7 @@ export function createHud(root, actions, thumbs) {
       lines.push(c.job ? t('insAssemblyJob', { id: c.job.orderId }) : c.output ? t('insAssemblyOut') : t('insAssemblyIdle'));
     } else if (src.emits) lines.push(src.onDemand ? t('insSourceDemand', { n: sourceNeed(s, x, y) }) : t('insSourceContinuous'));
     else lines.push(t('insDispatch'));
+    if (c.fixed) lines.push(t('insFixed'));
     // la mejora: hecha, se dice; si no, la consecuencia va escrita antes del botón Mejorar (insActions)
     const up = { up: true }, base = { up: false }; // cada frase usa los huecos que le tocan
     if (UPGRADES[c.kind]) lines.push(t((c.up ? 'upDone_' : 'upHint_') + c.kind, {
@@ -184,7 +194,7 @@ export function createHud(root, actions, thumbs) {
       const short = price !== null && s.mode === 'career' && s.money < price; // se ve corto como las herramientas y dice cuánto falta
       const upBtn = price === null ? '' : `<button class="btn ${short ? 'short' : ''}" data-act="upgradeSelected">${ICON.upgrade}<span>${t('actUpgrade')}</span>
         <span class="price">${short ? t('upShort', { price, n: price - s.money }) : price ? money(price) : t('free')}</span></button>`;
-      set('insActions', c ? `${upBtn}${KINDS[c.kind].noTurn ? '' : `<button class="btn" data-act="rotateSelected">${ICON.rotate}<span>${t('actRotate')}</span></button>`}
+      set('insActions', c?.fixed ? upBtn : c ? `${upBtn}${KINDS[c.kind].noTurn ? '' : `<button class="btn" data-act="rotateSelected">${ICON.rotate}<span>${t('actRotate')}</span></button>`}
         <button class="btn" data-act="eraseSelected">${ICON.erase}<span>${back ? t('actEraseRefund', { n: back }) : t('actErase')}</span></button>` : '');
       $('insClose').setAttribute('aria-label', t('actClose'));
     }
@@ -220,17 +230,26 @@ export function createHud(root, actions, thumbs) {
   const open = id => { const d = $(id); if (!d.open) d.showModal(); };
   const close = id => { const d = $(id); if (d.open) d.close(); };
 
-  /** saves = { career, sandbox } con el estado guardado de cada modo (o null); best = récord o null. */
-  function showStart(saves, best) {
-    const mode = (m, name, hint, saved) => `<section class="mode">
+  /**
+   * saves = { career, sandbox } con el estado guardado de cada modo (o null). lots = [{ key, open, best }] de los
+   * locales de Carrera en orden, con su récord (o null); lot = el elegido para una partida nueva.
+   */
+  function showStart(saves, lots, lot) {
+    const pick = lots.find(l => l.key === lot), lotName = k => t('lot_' + k);
+    const lotInfo = pick.open ? (pick.best ? t('bestRecord', pick.best) : t('lotNoBest'))
+      : t('lotLocked', { level: LOTS[lot].unlock[1], lot: lotName(LOTS[lot].unlock[0]) });
+    const picker = `<div class="lots" role="group" aria-label="${t('lotsLabel')}">${lots.map(l => `<button class="btn lotBtn ${l.key === lot ? 'on' : ''}" data-act="pickLot" data-arg="${l.key}" aria-pressed="${l.key === lot}"
+      aria-label="${l.open ? lotName(l.key) : t('lotClosedLabel', { lot: lotName(l.key) })}">${plan(LOTS[l.key])}<span>${lotName(l.key)}</span>${l.open ? '' : ICON.lock}</button>`).join('')}</div>
+      <p class="saved">${lotInfo}</p>`;
+    const mode = (m, name, hint, saved, extra = '') => `<section class="mode">
       <h2>${img(m === 'career' ? 'recipe_double' : 'assembly', 'thumb')}${name}</h2><p>${hint}</p>
-      ${saves[m] ? `<p class="saved">${saved}</p>` : ''}
+      ${saves[m] ? `<p class="saved">${saved}</p>` : ''}${extra}
       <div class="row">${saves[m] ? `<button class="btn primary" data-act="start" data-arg="${m}">${t('actContinue')}</button>` : ''}
-      <button class="btn ${saves[m] ? '' : 'primary'}" data-act="startNew" data-arg="${m}">${t('actNewGame')}</button></div></section>`;
+      <button class="btn ${saves[m] ? '' : 'primary'}" data-act="startNew" data-arg="${m}" ${m === 'career' && !pick.open ? 'disabled' : ''}>${t('actNewGame')}</button></div></section>`;
+    const sc = saves.career;
     $('dlgStart').innerHTML = `<h1>Burger Belt</h1><p class="tagline">${t('tagline')}</p>
-      <div class="modes">${mode('career', t('modeCareer'), t('modeCareerHint'), saves.career && t('savedCareer', { level: saves.career.level, time: clock(saves.career.time) }))}
+      <div class="modes">${mode('career', t('modeCareer'), t('modeCareerHint'), sc && t('savedCareer', { lot: lotName(sc.lot), level: sc.level, time: clock(sc.time) }), picker)}
       ${mode('sandbox', t('modeSandbox'), t('modeSandboxHint'), saves.sandbox && t('savedSandbox', { time: clock(saves.sandbox.time) }))}</div>
-      ${best ? `<p class="saved">${t('bestRecord', best)}</p>` : ''}
       <div class="row between">${langPicker()}<button class="btn" data-act="help">${ICON.help}<span>${t('actHelp')}</span></button></div>`;
     open('dlgStart');
   }

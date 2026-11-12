@@ -89,9 +89,16 @@ const MUTATIONS = [
   ['reemplazar conserva la mejora', 'src/sim.js', '  put(s, x, y, kind, dir);\n  return { ok: true };', '  put(s, x, y, kind, dir);\n  if (cur) at(s, x, y).up = cur.up;\n  return { ok: true };'],
   ['girar pierde la mejora', 'src/sim.js', '    cur.dir = dir;\n    return { ok: true };', '    cur.dir = dir;\n    cur.up = false;\n    return { ok: true };'],
   ['guardar pierde la mejora', 'src/sim.js', 'JSON.stringify({ ...s, events: [] })', 'JSON.stringify({ ...s, events: [], cells: s.cells.map(c => c && { ...c, up: false }) })'],
+  ['se construye donde no hay piso', 'src/sim.js', ' && s.cells[y * s.W + x] !== false;', ';'],
+  ['una máquina fija se reemplaza o se gira', 'src/sim.js', "  if (cur?.fixed) return { ok: false, reason: 'fixed' };\n", ''],
+  ['una máquina fija se borra', 'src/sim.js', 'if (!cur || cur.fixed || s.over) return false;', 'if (!cur || s.over) return false;'],
+  ['las máquinas fijas del local no se marcan', 'src/sim.js', '  for (const [x, y] of lot.fixed ?? []) at(s, x, y).fixed = true;\n', ''],
+  ['las columnas del local son piso', 'src/sim.js', '  rects(lot.pillars, (x, y) => { s.cells[y * s.W + x] = false; });\n', ''],
+  ['ampliar no mira el local', 'src/sim.js', 'LOTS[s.lot].grow ?? [LOT.growW, LOT.growH]', '[LOT.growW, LOT.growH]'],
+  ['un local se abre sin llegar al nivel', 'src/sim.js', '>= LOTS[key].unlock[1]', '>= 0'],
 ];
 
-const TIMEOUT = 60000;
+const TIMEOUT = 180000;
 let bad = 0;
 for (const [name, file, find, replace] of MUTATIONS) {
   const original = readFileSync(file, 'utf8');
