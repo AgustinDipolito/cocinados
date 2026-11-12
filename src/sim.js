@@ -3,10 +3,10 @@
 import {
   DIRS, BELT_TIME, STUCK_AFTER, QUEUE_MAX, LATE_PAY, GRACE, HEARTS, REFUND, CAP, TIMES, KINDS,
   SOURCE_OF, INGREDIENTS, RECIPES, SANDBOX_DEADLINE, SANDBOX_INTERVAL, START_MONEY, orderInterval,
-  deliveriesFor, LOT, LOTS, DIAG, UPGRADES,
+  deliveriesFor, LOT, LOTS, DIAG, UPGRADES, PUZZLES, PUZZLE_REFUND, PUZZLE_ORDER,
 } from './data.js';
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 function rand(s) { // mulberry32: el azar sale de la semilla guardada, así una partida se puede repetir
   s.seed = (s.seed + 0x6D2B79F5) | 0;
@@ -33,22 +33,24 @@ const put = (s, x, y, kind, dir = 0) => { s.cells[y * s.W + x] = make(kind, dir)
 const emit = (s, type, data) => s.events.push({ type, ...data });
 const log = (s, key, p) => { s.log.unshift({ time: s.time, key, p }); if (s.log.length > 7) s.log.length = 7; };
 const isCareer = s => s.mode === 'career';
+const paid = s => s.mode !== 'sandbox'; // Carrera y desafío cobran; el modo libre no
+const isPuzzle = s => s.mode === 'puzzle';
 
-export const cost = (s, kind) => (isCareer(s) ? KINDS[kind].cost : 0);
-export const upgradeCost = (s, kind) => (isCareer(s) ? UPGRADES[kind].cost : 0);
-/** Lo que devuelve borrar o reemplazar la máquina c: la mitad de lo invertido en ella (máquina más mejora). */
-export const refund = (s, c) => Math.floor((cost(s, c.kind) + (c.up ? upgradeCost(s, c.kind) : 0)) * REFUND);
+export const cost = (s, kind) => (paid(s) ? KINDS[kind].cost : 0);
+export const upgradeCost = (s, kind) => (paid(s) ? UPGRADES[kind].cost : 0);
+/** Lo que devuelve borrar o reemplazar la máquina c: la mitad de lo invertido en ella (máquina más mejora); en un desafío, todo. */
+export const refund = (s, c) => Math.floor((cost(s, c.kind) + (c.up ? upgradeCost(s, c.kind) : 0)) * (isPuzzle(s) ? PUZZLE_REFUND : REFUND));
 // Lo que la mejora cambia: cada lugar que lee estos valores lee los de la celda.
 export const burners = c => (c.up ? UPGRADES.grill.burners : 1);
 export const stockCap = c => (c.up ? UPGRADES.stock.stock : CAP.stock);
 export const assembleTime = c => (c.up ? UPGRADES.assembly.assemble : TIMES.assemble);
 export const expandCost = s => (isCareer(s) ? LOT.cost(s.expansions) : 0);
-export const canExpand = s => s.expansions < LOT.maxExpansions;
+export const canExpand = s => !isPuzzle(s) && s.expansions < LOT.maxExpansions;
 /** [ancho, alto] que suma cada ampliación del local de la partida. */
 export const lotGrow = s => LOTS[s.lot].grow ?? [LOT.growW, LOT.growH];
 /** Si el local está abierto. best(local): el récord { level } de ese local, o null. */
 export const lotOpen = (key, best) => !LOTS[key].unlock || (best(LOTS[key].unlock[0])?.level ?? 0) >= LOTS[key].unlock[1];
-export const deadline = (s, key) => (isCareer(s) ? RECIPES[key].deadline : SANDBOX_DEADLINE[key]);
+export const deadline = (s, key) => (paid(s) ? RECIPES[key].deadline : SANDBOX_DEADLINE[key]);
 export const delivered = s => s.stats.onTime + s.stats.late;
 export const lost = s => s.stats.expired + s.stats.turnedAway;
 
@@ -61,16 +63,19 @@ function buildLot(s, lot) {
   rects(lot.pillars, (x, y) => { s.cells[y * s.W + x] = false; });
 }
 
+/** En un desafío, lot es la clave del desafío (PUZZLES), que es también la de su local. */
 export function newGame(mode = 'career', seed = 1, lot = mode === 'career' ? 'classic' : 'sandbox') {
   const { w, h } = LOTS[lot];
   const s = {
     v: SAVE_VERSION, mode, lot, W: w, H: h, cells: Array(w * h).fill(null), orders: [], log: [], events: [],
     time: 0, autoClock: 0, autoOrders: true, orderId: 1, itemId: 1, seed,
-    money: mode === 'career' ? START_MONEY : 0, hearts: HEARTS, level: 1, expansions: 0, over: false,
+    money: mode === 'career' ? START_MONEY : mode === 'puzzle' ? PUZZLES[lot].budget : 0, hearts: HEARTS, level: 1, expansions: 0, over: false,
     stats: { onTime: 0, late: 0, expired: 0, turnedAway: 0, waste: 0, earned: 0 },
+    script: 0, result: null, // desafío: cuántos pedidos del guion ya llegaron · 'won' | 'expired' | 'timeout' al terminar
   };
   buildLot(s, LOTS[lot]);
-  for (const key of isCareer(s) ? ['classic'] : ['classic', 'cheese', 'double']) addOrder(s, key);
+  if (isPuzzle(s)) { for (const c of s.cells) if (c) c.fixed = true; feed(s); } // las piezas dadas del desafío no se tocan
+  else for (const key of isCareer(s) ? ['classic'] : ['classic', 'cheese', 'double']) addOrder(s, key);
   s.log.length = 0;
   log(s, 'logReady');
   return s;
@@ -98,7 +103,7 @@ export function availableRecipes(s) {
 // trabajo o su hamburguesa (loseContents) vuelve a 'pending'. Una hamburguesa puede sobrevivir a su
 // pedido: si llega al despacho cuando el cliente ya se fue, es desperdicio.
 export function addOrder(s, key, manual = false) {
-  if (s.over) return false;
+  if (s.over || (manual && isPuzzle(s))) return false; // en un desafío los pedidos son los del guion
   if (s.orders.length >= QUEUE_MAX) { if (manual) emit(s, 'queueFull'); return false; }
   if (!availableRecipes(s).includes(key)) return false;
   const o = { id: s.orderId++, recipeKey: key, createdAt: s.time, due: s.time + deadline(s, key), status: 'pending' };
@@ -107,6 +112,37 @@ export function addOrder(s, key, manual = false) {
   emit(s, 'order', { id: o.id });
   return true;
 }
+
+/** Desafío: llegan los pedidos del guion cuyo momento ya pasó. */
+function feed(s) {
+  const list = PUZZLES[s.lot].orders;
+  // el que encuentra la cola llena se va, y eso pierde el desafío como un pedido vencido (judge)
+  while (s.script < list.length && s.time >= list[s.script][0] - 1e-9) if (!addOrder(s, list[s.script++][1])) s.stats.turnedAway++;
+}
+
+/** Desafío: se gana al entregar todos a tiempo; se pierde al vencerse uno (o entregarse tarde, o encontrar la cola llena) o al pasar el límite. */
+function judge(s) {
+  const P = PUZZLES[s.lot];
+  const result = s.stats.late || s.stats.turnedAway || s.orders.some(o => s.time > o.due) ? 'expired'
+    : s.stats.onTime === P.orders.length ? 'won' : s.time >= P.limit ? 'timeout' : null;
+  if (!result) return;
+  s.over = true;
+  s.result = result;
+  emit(s, 'puzzleEnd', { result });
+}
+
+/**
+ * Estrellas de un desafío terminado: una por ganar, otra por gastar como mucho P.spend y otra por terminar con
+ * como mucho P.belts cintas (las dadas cuentan). Perder da cero. spent: lo que se gastó del presupuesto.
+ */
+export function puzzleStars(s) {
+  const P = PUZZLES[s.lot], spent = P.budget - s.money, belts = s.cells.filter(c => c?.kind === 'belt').length;
+  const won = s.result === 'won', spendOk = spent <= P.spend, beltsOk = belts <= P.belts;
+  return { won, spent, belts, spendOk, beltsOk, stars: won ? 1 + spendOk + beltsOk : 0 };
+}
+
+/** Si el desafío está abierto: el primero siempre; los otros, con al menos una estrella en el anterior. stars(clave): las mejores. */
+export const puzzleOpen = (key, stars) => { const i = PUZZLE_ORDER.indexOf(key); return i === 0 || stars(PUZZLE_ORDER[i - 1]) > 0; };
 
 function randomRecipe(s) {
   const keys = availableRecipes(s);
@@ -186,7 +222,7 @@ function finishOrder(s, id, x, y) {
   s.orders.splice(i, 1);
   s.stats[late ? 'late' : 'onTime']++;
   s.stats.earned += amount;
-  s.money += amount;
+  if (!isPuzzle(s)) s.money += amount; // en un desafío el presupuesto es lo que hay
   log(s, late ? 'logLate' : 'logDelivered', { id, recipe: o.recipeKey });
   emit(s, 'delivered', { id, x, y, amount, late });
   while (isCareer(s) && delivered(s) >= deliveriesFor(s.level)) {
@@ -243,7 +279,7 @@ export function place(s, x, y, kind, dir = 0) {
     return { ok: true };
   }
   const price = cost(s, kind) - (cur ? refund(s, cur) : 0);
-  if (isCareer(s) && s.money < price) return { ok: false, reason: 'money' };
+  if (paid(s) && s.money < price) return { ok: false, reason: 'money' };
   if (cur) loseContents(s, cur);
   s.money -= price;
   put(s, x, y, kind, dir);
@@ -269,7 +305,7 @@ export function upgrade(s, x, y) {
   if (!UPGRADES[c.kind]) return { ok: false, reason: 'none' };
   if (c.up) return { ok: false, reason: 'done' };
   const price = upgradeCost(s, c.kind);
-  if (isCareer(s) && s.money < price) return { ok: false, reason: 'money' };
+  if (paid(s) && s.money < price) return { ok: false, reason: 'money' };
   s.money -= price;
   c.up = true;
   return { ok: true };
@@ -430,7 +466,8 @@ function output(s, x, y, c, dt) {
 export function step(s, dt) {
   if (s.over) return;
   s.time += dt;
-  if (isCareer(s) || s.autoOrders) {
+  if (isPuzzle(s)) feed(s);
+  else if (isCareer(s) || s.autoOrders) {
     s.autoClock += dt;
     const every = isCareer(s) ? orderInterval(s.level) : SANDBOX_INTERVAL;
     if (s.autoClock >= every) {
@@ -456,6 +493,7 @@ export function step(s, dt) {
     if (c) output(s, x, y, c, dt);
   }
   track(s, dt);
+  if (isPuzzle(s)) judge(s);
 }
 
 // ---------- diagnóstico ----------

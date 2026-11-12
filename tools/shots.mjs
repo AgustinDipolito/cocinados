@@ -154,6 +154,29 @@ await pool(runs, async ([lang, vp]) => {
   await shot('2-ayuda', { maxProse: 4 }); // hoja de ayuda: exenta de la regla de tres, se informa su número
   await click('[data-act=closeHelp]');
 
+  // El primer desafío con clics de verdad: abre en pausa con su primer pedido, se tienden las seis cintas, se reanuda
+  // y se gana con las tres estrellas; la hoja de cierre ofrece el siguiente y el progreso queda guardado.
+  check(where, 'desafíos', await page.evaluate(() => document.querySelector('[data-act=startPuzzle][data-arg=pzCheese]')?.disabled), 'el segundo desafío está abierto sin ganar el primero');
+  await click('[data-act=startPuzzle][data-arg=pzLine]');
+  await noDialog();
+  check(where, 'desafío', await page.evaluate(() => { const { game, ui } = window.__bb; return game.mode === 'puzzle' && !ui.playing && game.orders.length === 1 && !document.querySelector('#status').hidden; }), 'el desafío no abre en pausa con su primer pedido');
+  await shot('1b-desafio-recien-abierto');
+  await click('[data-act=setTool][data-arg=belt]');
+  for (const [x, y] of [[2, 1], [4, 1], [5, 1], [7, 1], [8, 1]]) await clickCell(x, y); // las coordenadas se miden justo antes de cada clic
+  for (let i = 0; i < 3; i++) await page.keyboard.press('r');
+  await clickCell(6, 2);
+  await until('seis cintas, cobradas', () => { const { game, sim } = window.__bb; return game.money === 8 && sim.at(game, 6, 2)?.dir === 3; });
+  await click('[data-act=setTool][data-arg=inspect]');
+  await click('[data-act=togglePause]');
+  await page.evaluate(() => window.__bb.advance(60));
+  await until('hoja de cierre del desafío', () => document.querySelector('#dlgOver[open] [data-act=startPuzzle]'));
+  check(where, 'desafío', await page.evaluate(() => window.__bb.game.result === 'won' && JSON.parse(localStorage.getItem('bb.puzzles')).pzLine === 3
+    && !!document.querySelector('#dlgOver [data-act=startPuzzle][data-arg=pzCheese]')), 'no ganó con tres estrellas, no lo guardó o no ofrece el siguiente');
+  await shot('1c-desafio-cierre');
+  await click('#dlgOver [data-act=exit]');
+  await ready();
+  check(where, 'desafíos', await page.evaluate(() => !document.querySelector('[data-act=startPuzzle][data-arg=pzCheese]').disabled), 'ganar el primero no abre el segundo');
+
   // Carrera, tal como la encuentra quien llega: sin tocar nada.
   await click('[data-act=startNew][data-arg=career]');
   await noDialog();

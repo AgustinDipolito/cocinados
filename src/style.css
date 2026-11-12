@@ -135,6 +135,7 @@ progress::-moz-progress-bar { background: var(--ok); }
 .ticket.late .meter i { background: var(--bad); width: 100% !important; }
 .empty { align-self: center; color: var(--ink-soft); }
 #orderAdd { flex: none; display: flex; align-items: center; gap: var(--gap); align-self: flex-start; padding: var(--gap); }
+#orderAdd[hidden] { display: none; }
 #orderAdd .lead { font-size: var(--fs-xs); color: var(--ink-soft); }
 .thumbBtn { padding: 0; }
 .check { display: flex; align-items: center; gap: 6px; min-height: var(--touch); cursor: pointer; }
@@ -215,6 +216,13 @@ dialog.sheet::backdrop { background: var(--scrim); }
 .plan .floor { fill: var(--line); }
 .plan .mark { fill: var(--ink); }
 .lotBtn .ico { margin-left: auto; }
+.stars { flex: none; }
+.lotBtn .stars { margin-left: auto; }
+.stars .on { fill: currentColor; }
+.stars .off { fill: none; stroke: currentColor; stroke-width: 1.6; }
+.starLine { display: flex; align-items: center; gap: var(--gap); }
+.starList { list-style: none; padding: 0; display: grid; gap: var(--gap); }
+.starList li { display: flex; align-items: center; gap: var(--gap); font-size: var(--fs-sm); }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap); }
 .row.between { justify-content: space-between; }
 .row.end { justify-content: flex-end; }

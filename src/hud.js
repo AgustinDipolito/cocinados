@@ -1,6 +1,6 @@
 // El HUD es HTML encima del lienzo 3D. Lee el estado y avisa los toques con actions.*; no toca la simulación.
-import { BUILD_ORDER, RECIPES, KINDS, CAP, UPGRADES, QUEUE_MAX, HEARTS, LOTS, deliveriesFor } from './data.js';
-import { at, cost, refund, upgradeCost, burners, stockCap, assembleTime, expandCost, canExpand, lotGrow, sourceNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck } from './sim.js';
+import { BUILD_ORDER, RECIPES, KINDS, CAP, UPGRADES, QUEUE_MAX, HEARTS, LOTS, PUZZLES, deliveriesFor } from './data.js';
+import { at, cost, refund, upgradeCost, burners, stockCap, assembleTime, expandCost, canExpand, lotGrow, sourceNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck, puzzleStars } from './sim.js';
 import { t, LANGS, getLang } from './i18n.js';
 import { orderRisk } from './crowd.js';
 
@@ -27,6 +27,10 @@ const ICON = {
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 export const clock = s => { s = Math.max(0, Math.floor(s)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
 const money = n => `$${n}`;
+const STAR = 'M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z';
+/** n estrellas llenas de total: llenas y huecas, la forma dice lo mismo que el color. */
+const stars = (n, total = 3) => `<svg class="stars" viewBox="0 0 ${24 * total} 24" width="${18 * total}" height="18" aria-hidden="true">${
+  Array.from({ length: total }, (_, i) => `<path class="${i < n ? 'on' : 'off'}" transform="translate(${24 * i})" d="${STAR}"/>`).join('')}</svg>`;
 const pct = share => t('percent', { n: Math.round(share * 100) });
 /** Mini plano de un local, trazado desde su máscara: piso claro, columnas y máquinas fijas oscuras. */
 function plan(lot) {
@@ -88,8 +92,10 @@ export function createHud(root, actions, thumbs) {
   const stat = (label, value, cls = 'extra') => `<div class="stat ${cls}"><span>${label}</span><b>${value}</b></div>`;
 
   function renderTop(s, ui) {
-    const career = s.mode === 'career';
-    let h = stat(t(career ? 'statMoney' : 'statEarned'), money(s.money), 'main');
+    const career = s.mode === 'career', P = PUZZLES[s.lot];
+    let h = stat(t(career ? 'statMoney' : P ? 'statBudget' : 'statEarned'), money(s.money), 'main');
+    if (P) h += stat(t('statTimeLeft'), clock(P.limit - s.time), 'main') + stat(t('statOrdersLeft'), P.orders.length - s.stats.onTime, 'main')
+      + stat(t('statBelts'), t('ofMax', { n: puzzleStars(s).belts, max: P.belts }), 'main'); // la tercera estrella, a la vista
     if (career) {
       const hearts = Array.from({ length: HEARTS }, (_, i) => `<i class="${i < s.hearts ? 'on' : ''}">${ICON.heart}</i>`).join('');
       const prev = s.level > 1 ? deliveriesFor(s.level - 1) : 0, goal = deliveriesFor(s.level) - prev, done = delivered(s) - prev;
@@ -132,6 +138,7 @@ export function createHud(root, actions, thumbs) {
     }).join('') : `<p class="empty panel">${t('ordersEmpty')}</p>`);
     const add = availableRecipes(s).map(k =>
       `<button class="btn thumbBtn" data-act="addOrder" data-arg="${k}" title="${t('orderAdd', { recipe: t('recipe_' + k) })}" aria-label="${t('orderAdd', { recipe: t('recipe_' + k) })}">${img('recipe_' + k)}</button>`).join('');
+    $('orderAdd').hidden = s.mode === 'puzzle'; // en un desafío los pedidos son los del guion
     set('orderAdd', `<span class="lead">${t('orderAddTitle')}</span>${add}`
       + (s.mode === 'sandbox' ? `<label class="check"><input type="checkbox" id="autoOrders" ${s.autoOrders ? 'checked' : ''}>${t('autoOrders')}</label>` : ''));
   }
@@ -141,7 +148,7 @@ export function createHud(root, actions, thumbs) {
       `<button class="tool ${ui.tool === id ? 'active' : ''} ${off ? 'short' : ''}" data-act="setTool" data-arg="${id}" aria-pressed="${ui.tool === id}" title="${esc(title)}">
         ${pic}<span class="name">${name}</span>${price === null ? '' : `<span class="price">${price ? money(price) : t('free')}</span>`}</button>`;
     let h = tool('inspect', ICON.inspect, t('toolInspect'), null, t('toolInspect'));
-    for (const k of BUILD_ORDER) h += tool(k, img(k), t('kind_' + k), cost(s, k), `${t('kindLong_' + k)}. ${t('kindHint_' + k, { max: CAP.stock })}`, s.mode === 'career' && s.money < cost(s, k));
+    for (const k of BUILD_ORDER) h += tool(k, img(k), t('kind_' + k), cost(s, k), `${t('kindLong_' + k)}. ${t('kindHint_' + k, { max: CAP.stock })}`, s.mode !== 'sandbox' && s.money < cost(s, k));
     h += tool('erase', ICON.erase, t('toolErase'), null, t('toolErase'));
     h += `<span class="sep"></span>
       <button class="tool" data-act="rotate" title="${t('rotateLabel', { dir: t('dir' + ui.dir) })}" aria-label="${t('rotateLabel', { dir: t('dir' + ui.dir) })}">
@@ -191,7 +198,7 @@ export function createHud(root, actions, thumbs) {
       set('insBody', lines.map(l => `<p>${l}</p>`).join('') + (sh ? `<div class="shares"><span class="cap">${t('sharesTitle')}</span>${
         ['work', 'blocked', 'wait', 'idle'].map(k => stat(t('share_' + k), pct(sh[k]), '')).join('')}</div>` : ''));
       const back = c ? refund(s, c) : 0, price = c && UPGRADES[c.kind] && !c.up ? upgradeCost(s, c.kind) : null;
-      const short = price !== null && s.mode === 'career' && s.money < price; // se ve corto como las herramientas y dice cuánto falta
+      const short = price !== null && s.mode !== 'sandbox' && s.money < price; // se ve corto como las herramientas y dice cuánto falta
       const upBtn = price === null ? '' : `<button class="btn ${short ? 'short' : ''}" data-act="upgradeSelected">${ICON.upgrade}<span>${t('actUpgrade')}</span>
         <span class="price">${short ? t('upShort', { price, n: price - s.money }) : price ? money(price) : t('free')}</span></button>`;
       set('insActions', c?.fixed ? upBtn : c ? `${upBtn}${KINDS[c.kind].noTurn ? '' : `<button class="btn" data-act="rotateSelected">${ICON.rotate}<span>${t('actRotate')}</span></button>`}
@@ -233,8 +240,9 @@ export function createHud(root, actions, thumbs) {
   /**
    * saves = { career, sandbox } con el estado guardado de cada modo (o null). lots = [{ key, open, best }] de los
    * locales de Carrera en orden, con su récord (o null); lot = el elegido para una partida nueva.
+   * puzzles = [{ key, open, stars }] de los desafíos en orden, con sus mejores estrellas.
    */
-  function showStart(saves, lots, lot) {
+  function showStart(saves, lots, lot, puzzles) {
     const pick = lots.find(l => l.key === lot), lotName = k => t('lot_' + k);
     const lotInfo = pick.open ? (pick.best ? t('bestRecord', pick.best) : t('lotNoBest'))
       : t('lotLocked', { level: LOTS[lot].unlock[1], lot: lotName(LOTS[lot].unlock[0]) });
@@ -249,7 +257,11 @@ export function createHud(root, actions, thumbs) {
     const sc = saves.career;
     $('dlgStart').innerHTML = `<h1>Burger Belt</h1><p class="tagline">${t('tagline')}</p>
       <div class="modes">${mode('career', t('modeCareer'), t('modeCareerHint'), sc && t('savedCareer', { lot: lotName(sc.lot), level: sc.level, time: clock(sc.time) }), picker)}
-      ${mode('sandbox', t('modeSandbox'), t('modeSandboxHint'), saves.sandbox && t('savedSandbox', { time: clock(saves.sandbox.time) }))}</div>
+      ${mode('sandbox', t('modeSandbox'), t('modeSandboxHint'), saves.sandbox && t('savedSandbox', { time: clock(saves.sandbox.time) }))}
+      <section class="mode"><h2>${img('splitter', 'thumb')}${t('modePuzzle')}</h2><p>${t('modePuzzleHint')}</p>
+      <div class="lots" role="group" aria-label="${t('puzzlesLabel')}">${puzzles.map(p => { const name = t('puzzle_' + p.key);
+        return `<button class="btn lotBtn" data-act="startPuzzle" data-arg="${p.key}" ${p.open ? '' : 'disabled'}
+        aria-label="${p.open ? t('puzzleLabel', { name, n: p.stars }) : t('puzzleClosedLabel', { name })}"><span>${name}</span>${p.open ? stars(p.stars) : ICON.lock}</button>`; }).join('')}</div></section></div>
       <div class="row between">${langPicker()}<button class="btn" data-act="help">${ICON.help}<span>${t('actHelp')}</span></button></div>`;
     open('dlgStart');
   }
@@ -279,6 +291,20 @@ export function createHud(root, actions, thumbs) {
     open('dlgOver');
   }
 
+  /** Cierre de un desafío: las estrellas (forma y texto), cada condición con su marca, qué faltó y cómo seguir. next: el siguiente, si se abrió. */
+  function showPuzzleEnd(s, next) {
+    const P = PUZZLES[s.lot], r = puzzleStars(s), row = (ok, text) => `<li>${stars(ok ? 1 : 0, 1)}<span>${text}</span></li>`;
+    const tip = !r.won ? t('puzzleNextWin') : !r.spendOk ? t('puzzleNextSpend', { max: P.spend }) : !r.beltsOk ? t('puzzleNextBelts', { max: P.belts }) : '';
+    $('dlgOver').innerHTML = `<h1>${t(r.won ? 'puzzleWonTitle' : 'puzzleLostTitle')}</h1>
+      <p class="starLine">${stars(r.stars)}<span>${t('starsOf', { n: r.stars })}</span></p>${r.won ? '' : `<p>${t('puzzleWhy_' + s.result)}</p>`}
+      <ul class="starList">${row(r.won, t('starWin', { n: P.orders.length }))}${row(r.won && r.spendOk, t('starSpend', { max: P.spend, n: r.spent }))}${
+        row(r.won && r.beltsOk, t('starBelts', { max: P.belts, n: r.belts }))}</ul>${tip ? `<p>${tip}</p>` : ''}
+      <div class="row end"><button class="btn" data-act="exit">${t('actExit')}</button>
+      <button class="btn ${next ? '' : 'primary'}" data-act="startPuzzle" data-arg="${s.lot}">${t('actRetry')}</button>${
+        next ? `<button class="btn primary" data-act="startPuzzle" data-arg="${next}">${t('actNext')}</button>` : ''}</div>`;
+    open('dlgOver');
+  }
+
   /**
    * Cuánto tapa el HUD de cada borde, para encuadrar la cocina en lo que queda libre.
    * Con withInspector cuenta también el inspector abierto: sirve para no tapar la celda que se inspecciona.
@@ -297,5 +323,5 @@ export function createHud(root, actions, thumbs) {
   Object.assign(actions, { closeHelp: () => close('dlgHelp'), closeConfirm: () => close('dlgConfirm') });
   const refresh = () => cache.clear();
   const setVisible = on => { $('hud').hidden = !on; };
-  return { update, toast, floater, announce, showStart, showHelp, showOver, confirm, close, insets, refresh, setVisible, anyDialogOpen: () => !!root.querySelector('dialog[open]') };
+  return { update, toast, floater, announce, showStart, showHelp, showOver, showPuzzleEnd, confirm, close, insets, refresh, setVisible, anyDialogOpen: () => !!root.querySelector('dialog[open]') };
 }

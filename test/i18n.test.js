@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { STRINGS, LANGS } from '../src/i18n.js';
-import { KINDS, RECIPES, UPGRADES, CAREER_LOTS } from '../src/data.js';
+import { KINDS, RECIPES, UPGRADES, CAREER_LOTS, PUZZLE_ORDER } from '../src/data.js';
 
 const holes = s => (s.match(/\{\w+\}/g) ?? []).sort().join();
 const code = readdirSync('src').filter(f => f.endsWith('.js') && f !== 'i18n.js').map(f => readFileSync(`src/${f}`, 'utf8')).join('\n');
@@ -14,6 +14,7 @@ const families = {
   share_: ['work', 'blocked', 'wait', 'idle'],
   upHint_: Object.keys(UPGRADES), upDone_: Object.keys(UPGRADES),
   lot_: CAREER_LOTS,
+  puzzle_: PUZZLE_ORDER, puzzleWhy_: ['expired', 'timeout'],
 };
 const familyKeys = Object.entries(families).flatMap(([p, list]) => list.map(k => p + k));
 

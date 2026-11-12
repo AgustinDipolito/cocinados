@@ -45,13 +45,15 @@ cabeza de la fila, entrada y salida), `newCrowd()`, `stepCrowd(crowd, pedidos, e
 Mejoras en `src/sim.js`: `upgrade(s, x, y)` (mismo contrato que `place`: `ok` o `reason` `'out' | 'none' | 'done' | 'money'`),
 `upgradeCost(s, kind)`, `refund(s, celda)` (la mitad de máquina más mejora: el único lugar que calcula un reembolso), y los
 valores de la celda `burners(c)`, `stockCap(c)`, `assembleTime(c)`. `buildMachine(kind, up)` arma el modelo mejorado.
+Desafíos en `src/sim.js`: `puzzleStars(s)` (`{ won, spent, belts, spendOk, beltsOk, stars }`), `puzzleOpen(clave, estrellas)`;
+en el HUD, `stars(n, total)` (estrellas llenas y huecas en SVG) y `showPuzzleEnd(s, siguiente)`.
 
 **Idiomas.** Español (origen, voseo, sin exclamaciones) e inglés. Mecanismo: `STRINGS` y `t()` en
 `src/i18n.js`; `t()` tira error si la clave no existe y la prueba compara idiomas.
 
 **Arnés.** `npm run check` = `npm test` (1 s) → `npm run build` (1 s) → `npm run shots` (unos 9 min:
 6 corridas, 72 capturas en `shots/`, entre ellas la capa de atascos prendida con un clic, el divisor y el puente puestos con clics,
-y el inspector de la parrilla sin plata para mejorarla y ya mejorada, WebGL por software; el
+el inspector de la parrilla sin plata para mejorarla y ya mejorada, y el primer desafío resuelto con clics hasta su hoja de cierre, WebGL por software; el
 recorrido comprueba tres veces que la fila de la vereda es la cola de pedidos, en orden, en su lugar y sin panel encima). `npm run shots -- phone-es` corre una sola.
 
 **Inscripciones.** Una máquina nueva se anota en: `KINDS` y `BUILD_ORDER` (`data.js`); `accepts`,
@@ -74,6 +76,10 @@ Una receta: `RECIPES`, `SANDBOX_DEADLINE` y `recipe_`. Un ingrediente: `INGREDIE
 Un local nuevo se anota en: `LOTS` (tamaño, `holes`, `pillars`, `kitchen`, `fixed`, `grow`, `unlock`) y, si es de
 Carrera, `CAREER_LOTS` (`data.js`); `lot_` en los dos idiomas; su prueba de primera entrega sale sola de `CAREER_LOTS`
 en `test/lots.test.js`. Los agujeros van arriba o a la izquierda (ampliar suma piso a la derecha y abajo).
+Un desafío nuevo se anota en: su local en `LOTS` con la misma clave (prefijo `pz`), su fila en `PUZZLES` (`budget`, `orders`
+como `[segundo, receta]`, `limit`, `spend`, `belts`; el orden de la tabla es el del inicio), `puzzle_` en los dos idiomas, y
+su solución en `SOLUTIONS` de `test/puzzles.test.js`: la prueba la juega y exige tres estrellas, y exige que sin hacer nada
+no se gane. Si enseña una pieza, una prueba del atajo sin esa pieza que pierde. Ningún desafío entra sin solución que pase.
 
 **Circuito.** Un dato del juego vive en el estado de `sim.js`, viaja al guardado con `serialize`,
 vuelve con `deserialize` (que descarta versiones viejas: subir `SAVE_VERSION` al cambiar la forma),
@@ -105,6 +111,7 @@ y se lee en el HUD (`hud.js`) o en la escena (`scene.js`). Lo que no es del jueg
 - Un bucle `while (s.time < T)` sobre una partida que cierra no termina: `step` ya no avanza. Todo bucle de prueba lleva `!s.over`.
 - Los campos numéricos que se actualizan en cada paso se escriben por nombre (`d.work *= k`), no con `for…in`: el acceso por clave costaba el doble.
 - Una espera de prueba «hasta que ya no esté» dio verde antes del primer paso: sobre la lista vacía, «nadie con ese número» es cierto. La condición se evalúa después de avanzar.
+- Un editor dejó diez archivos con fin de línea CRLF en una copia de trabajo y el mutador marcó 21 mutaciones como VIEJA: sus textos de varios renglones no aparecían. El repositorio guarda LF (`.gitattributes`), pero el mutador lee el disco. Antes de creerle a una VIEJA se cuentan los `` por bytes (`tr -cd`), no con `grep` dentro de `$( )`, que en Git Bash los pierde y cuenta todos los renglones.
 - El reparto del plan (cada pedido a la armadora que más lo cubre, menos todo lo que viaja) trababa con un pan compartido
   por divisor: el pan que esperaba en la cinta de una armadora llena tapaba la necesidad de la otra. Lo que va de paso
   hacia una sola armadora cuenta como inventario de ésa, no como suelto; la prueba de propiedad lo encontró.
@@ -112,6 +119,9 @@ y se lee en el HUD (`hud.js`) o en la escena (`scene.js`). Lo que no es del jueg
   primera se recorre antes y salía siempre. Cada fuente mira las armadoras a las que llega su salida.
 - La barra de herramientas ya no entraba en 1024 px antes de sumar piezas (Girar cortado, Ampliar oculto) y el arnés no
   lo marcaba porque la barra se desplaza. Se miró la captura.
+- En un desafío con la cola llena, esperar a que haya lugar corría el plazo del pedido y una cocina a media velocidad ganaba
+  el desafío del divisor. El cliente que encuentra la cola llena pierde el desafío.
+- `hidden` no esconde un panel con `display: flex` propio: hace falta `[hidden] { display: none; }` (pasó con «Pedir»).
 - En la hoja de cierre, dos oraciones nuevas van en un solo párrafo: el arnés cuenta bloques de prosa. Un renglón de datos (proporciones del inspector) va como `.stat`, no como párrafo.
 
 **Entrega.** `npm run build` deja el juego en `dist/`, con rutas relativas: se sirve desde cualquier
@@ -123,7 +133,14 @@ navegador (`npm run shots`) no corre ahí: se corre a mano antes de subir.
 - three.js y no Flutter: Flutter no tiene un 3D maduro para sombras, materiales y cámara; el prototipo ya era web.
 - Gráficos hechos a mano con primitivas (cajas redondeadas, cilindros, texturas de lienzo): sin archivos de arte.
 - La simulación conserva las reglas del prototipo; cambian los tiempos (parrilla 5 s, armado 4 s) para que la presión exista.
-- Dos modos: Carrera (economía, niveles, reputación, final) y Modo libre (el prototipo: todo gratis, pedidos a mano, sin final).
+- Tres modos: Carrera (economía, niveles, reputación, final), Modo libre (el prototipo: todo gratis, pedidos a mano, sin final)
+  y Desafíos (`puzzle`). Un desafío: presupuesto fijo (las entregas no suman; borrar devuelve todo, `PUZZLE_REFUND`), piezas
+  dadas fijas, pedidos por guion sin azar con el plazo de Carrera, sin reputación ni niveles ni ampliar ni pedir a mano;
+  empieza en pausa para armar. Se gana al entregar todos a tiempo; se pierde al vencerse uno, al llegar uno con la cola
+  llena o al pasar el límite (`s.result`, evento `puzzleEnd`). Estrellas: ganar, gastar como mucho `spend`, terminar con
+  como mucho `belts` cintas (las dadas cuentan). Un desafío no se guarda a medias; las mejores estrellas van en
+  `bb.puzzles` y cada uno se abre con una estrella en el anterior. `isCareer` decide niveles, reputación y azar; `paid` (no
+  libre) decide costos y plazos.
 - La cinta toma la dirección del arrastre; `R` sigue girando a mano.
 - Los paneles del HUD llevan sombra y la barra de construcción flota centrada: flotan de verdad sobre una escena 3D.
 - El aviso rojo en una cinta es sólo para un producto sin salida, no para una cinta frenada por una máquina llena.

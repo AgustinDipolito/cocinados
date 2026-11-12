@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 const MUTATIONS = [
   ['borrar devuelve todo en vez de la mitad', 'src/sim.js', 's.money += refund(s, cur);', 's.money += cost(s, cur.kind);'],
   ['construir no cobra', 'src/sim.js', '  s.money -= price;\n  put(s, x, y, kind, dir);', '  put(s, x, y, kind, dir);'],
-  ['se construye sin dinero', 'src/sim.js', "if (isCareer(s) && s.money < price) return { ok: false, reason: 'money' };\n  if (cur)", 'if (cur)'],
+  ['se construye sin dinero', 'src/sim.js', "if (paid(s) && s.money < price) return { ok: false, reason: 'money' };\n  if (cur)", 'if (cur)'],
   ['girar reconstruye la máquina', 'src/sim.js', '    cur.dir = dir;\n    return { ok: true };', '    put(s, x, y, kind, dir);\n    return { ok: true };'],
   ['el pedido no vuelve a la cola', 'src/sim.js', "if (o) o.status = 'pending';", 'if (o) o.status = o.status;'],
   ['ampliar desordena las celdas', 'src/sim.js', 'cells[y * W + x] = s.cells[y * s.W + x];', 'cells[y * s.W + x] = s.cells[y * s.W + x];'],
@@ -78,10 +78,10 @@ const MUTATIONS = [
   ['el puente trabado en su segundo carril no cuenta como trabado', 'src/sim.js', ' || (c.item2 && c.item2.readyAt <= s.time)', ''],
   // etapa 4: mejoras de máquina
   ['la mejora no cobra', 'src/sim.js', '  s.money -= price;\n  c.up = true;', '  c.up = true;'],
-  ['se mejora sin dinero', 'src/sim.js', "if (isCareer(s) && s.money < price) return { ok: false, reason: 'money' };\n  s.money -= price;\n  c.up", 's.money -= price;\n  c.up'],
+  ['se mejora sin dinero', 'src/sim.js', "if (paid(s) && s.money < price) return { ok: false, reason: 'money' };\n  s.money -= price;\n  c.up", 's.money -= price;\n  c.up'],
   ['se mejora dos veces', 'src/sim.js', "  if (c.up) return { ok: false, reason: 'done' };\n", ''],
   ['se mejora cualquier máquina', 'src/sim.js', "  if (!UPGRADES[c.kind]) return { ok: false, reason: 'none' };\n", ''],
-  ['en modo libre mejorar cobra', 'src/sim.js', '(isCareer(s) ? UPGRADES[kind].cost : 0)', 'UPGRADES[kind].cost'],
+  ['en modo libre mejorar cobra', 'src/sim.js', '(paid(s) ? UPGRADES[kind].cost : 0)', 'UPGRADES[kind].cost'],
   ['el reembolso olvida la mejora', 'src/sim.js', '(c.up ? upgradeCost(s, c.kind) : 0)', '0'],
   ['la doble hornalla cocina de a una', 'src/sim.js', '(c.up ? UPGRADES.grill.burners : 1)', '1'],
   ['el segundo brazo no acelera', 'src/sim.js', '(c.up ? UPGRADES.assembly.assemble : TIMES.assemble)', 'TIMES.assemble'],
@@ -95,6 +95,21 @@ const MUTATIONS = [
   ['las máquinas fijas del local no se marcan', 'src/sim.js', '  for (const [x, y] of lot.fixed ?? []) at(s, x, y).fixed = true;\n', ''],
   ['las columnas del local son piso', 'src/sim.js', '  rects(lot.pillars, (x, y) => { s.cells[y * s.W + x] = false; });\n', ''],
   ['ampliar no mira el local', 'src/sim.js', 'LOTS[s.lot].grow ?? [LOT.growW, LOT.growH]', '[LOT.growW, LOT.growH]'],
+  // etapa 7: desafíos
+  ['en un desafío borrar devuelve la mitad', 'src/sim.js', '(isPuzzle(s) ? PUZZLE_REFUND : REFUND)', 'REFUND'],
+  ['las piezas dadas del desafío no vienen fijas', 'src/sim.js', 'for (const c of s.cells) if (c) c.fixed = true; ', ''],
+  ['el guion no trae pedidos', 'src/sim.js', 'if (isPuzzle(s)) feed(s);\n  else if', 'if (false) feed(s);\n  else if'],
+  ['en un desafío se pide a mano', 'src/sim.js', ' || (manual && isPuzzle(s))', ''],
+  ['en un desafío las entregas suman al presupuesto', 'src/sim.js', 'if (!isPuzzle(s)) s.money += amount;', 's.money += amount;'],
+  ['un pedido vencido no pierde el desafío', 'src/sim.js', " || s.orders.some(o => s.time > o.due) ? 'expired'", " ? 'expired'"],
+  ['la cola llena no pierde el desafío', 'src/sim.js', ' || s.stats.turnedAway || ', ' || '],
+  ['el límite no termina el desafío', 'src/sim.js', "s.time >= P.limit ? 'timeout'", "false ? 'timeout'"],
+  ['se gana sin entregar todo', 'src/sim.js', "s.stats.onTime === P.orders.length ? 'won'", "s.stats.onTime >= 1 ? 'won'"],
+  ['la estrella de gasto no mira el gasto', 'src/sim.js', 'spendOk = spent <= P.spend', 'spendOk = true'],
+  ['la estrella de cintas no las cuenta', 'src/sim.js', 'beltsOk = belts <= P.belts', 'beltsOk = true'],
+  ['perder da estrellas', 'src/sim.js', 'stars: won ? 1 + spendOk + beltsOk : 0', 'stars: 1 + spendOk + beltsOk'],
+  ['un desafío se abre sin ganar el anterior', 'src/sim.js', 'stars(PUZZLE_ORDER[i - 1]) > 0', 'true'],
+  ['el desafío del divisor se gana con una cinta', 'src/data.js', "orders: every(12, 2.5, 'classic')", "orders: every(6, 5, 'classic')"],
   ['un local se abre sin llegar al nivel', 'src/sim.js', '>= LOTS[key].unlock[1]', '>= 0'],
 ];
 

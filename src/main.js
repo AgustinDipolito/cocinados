@@ -2,7 +2,7 @@
 import '@fontsource/fredoka/latin-500.css';
 import '@fontsource/fredoka/latin-600.css';
 import './style.css';
-import { STEP, DIRS, QUEUE_MAX, BUILD_ORDER, RECIPES, SOURCE_OF, INGREDIENTS, KINDS, CAREER_LOTS } from './data.js';
+import { STEP, DIRS, QUEUE_MAX, BUILD_ORDER, RECIPES, SOURCE_OF, INGREDIENTS, KINDS, CAREER_LOTS, PUZZLE_ORDER } from './data.js';
 import * as sim from './sim.js';
 import { createScene } from './scene.js';
 import { createHud } from './hud.js';
@@ -18,14 +18,17 @@ function applyLang(l) { setLang(l); canvas.setAttribute('aria-label', t('boardLa
 applyLang(store.get('lang') ?? (navigator.language.startsWith('es') ? 'es' : 'en'));
 
 const scene = createScene(canvas);
-const ui = { tool: 'inspect', dir: 0, selected: null, cursor: null, playing: true, speed: 1, jams: false, lot: 'classic' }; // lot: el local elegido en el inicio
+const ui = { tool: 'inspect', dir: 0, selected: null, cursor: null, playing: true, speed: 1, jams: false, lot: 'classic', puzzle: PUZZLE_ORDER[0] }; // lot: el local elegido en el inicio · puzzle: el desafío en juego
 let game = sim.newGame('career', 1), started = false, acc = 0;
 
 const loadSave = mode => sim.deserialize(store.get('save.' + mode) ?? '');
 // El récord es por local; el de El clásico sigue en la clave de antes, así el récord guardado hasta ahora es el suyo.
 const bestKey = lot => (lot === 'classic' ? 'best' : 'best.' + lot);
 const loadBest = lot => { try { return JSON.parse(store.get(bestKey(lot))); } catch { return null; } };
-const save = () => { if (started && !game.over) store.set('save.' + game.mode, sim.serialize(game)); };
+// Las mejores estrellas de cada desafío, aparte de las partidas: un desafío es corto y no se guarda a medias.
+const loadStars = () => { try { return JSON.parse(store.get('puzzles')) ?? {}; } catch { return {}; } };
+const starsOf = key => loadStars()[key] ?? 0;
+const save = () => { if (started && !game.over && game.mode !== 'puzzle') store.set('save.' + game.mode, sim.serialize(game)); };
 const fit = () => scene.fit(game, hud.insets());
 
 const actions = {
@@ -46,11 +49,12 @@ const actions = {
     if (c && sim.upgrade(game, ui.selected.x, ui.selected.y).reason === 'money') noMoney(sim.upgradeCost(game, c.kind));
   },
   askRestart() {
-    hud.confirm(t('confirmRestartTitle'), t('confirmRestartBody'), t('actRestart'), () => begin(game.mode, true));
+    hud.confirm(t('confirmRestartTitle'), game.mode === 'puzzle' ? t('confirmRestartPuzzle') : t('confirmRestartBody'), t('actRestart'), () => begin(game.mode, true));
   },
   exit() { save(); started = false; hud.close('dlgOver'); hud.setVisible(false); showStart(); },
   start(mode) { begin(mode, false); },
   pickLot(lot) { ui.lot = lot; showStart(); },
+  startPuzzle(key) { if (sim.puzzleOpen(key, starsOf)) { ui.puzzle = key; begin('puzzle', true); } },
   startNew(mode) {
     if (mode === 'career' && !sim.lotOpen(ui.lot, loadBest)) return;
     if (!loadSave(mode) || (started && game.over)) return begin(mode, true);
@@ -69,7 +73,8 @@ document.getElementById('dlgStart').addEventListener('close', () => { if (!start
 
 function showStart() {
   hud.showStart({ career: loadSave('career'), sandbox: loadSave('sandbox') },
-    CAREER_LOTS.map(key => ({ key, open: sim.lotOpen(key, loadBest), best: loadBest(key) })), ui.lot);
+    CAREER_LOTS.map(key => ({ key, open: sim.lotOpen(key, loadBest), best: loadBest(key) })), ui.lot,
+    PUZZLE_ORDER.map(key => ({ key, open: sim.puzzleOpen(key, starsOf), stars: starsOf(key) })));
 }
 
 // Fases de la sesión. No hay una variable de fase: se deducen, y `running` en frame() las junta.
@@ -78,9 +83,9 @@ function showStart() {
 //   en pausa  -> started && !ui.playing        · con una hoja abierta el tiempo tampoco corre
 //   cerrada   -> game.over (hoja dlgOver; ya no se guarda ni avanza)
 function begin(mode, fresh) {
-  game = (!fresh && loadSave(mode)) || sim.newGame(mode, (Date.now() & 0x7fffffff) || 1, mode === 'career' ? ui.lot : undefined);
+  game = (!fresh && loadSave(mode)) || sim.newGame(mode, (Date.now() & 0x7fffffff) || 1, mode === 'career' ? ui.lot : mode === 'puzzle' ? ui.puzzle : undefined);
   if (mode === 'career') ui.lot = game.lot; // «Jugar de nuevo» repite el local
-  Object.assign(ui, { tool: 'inspect', dir: 0, selected: null, cursor: null, playing: true, speed: 1 });
+  Object.assign(ui, { tool: 'inspect', dir: 0, selected: null, cursor: null, playing: mode !== 'puzzle', speed: 1 }); // un desafío empieza en pausa para armar
   started = true; acc = 0;
   select(null); hover(null);
   hud.close('dlgStart'); hud.close('dlgOver');
@@ -88,6 +93,7 @@ function begin(mode, fresh) {
   hud.update(game, ui);
   fit();
   save();
+  if (mode === 'puzzle') hud.toast(t('toastPuzzleStart'));
   canvas.focus();
 }
 
@@ -117,7 +123,7 @@ function hover(cell) {
   const cur = cell && sim.at(game, cell.x, cell.y), dir = KINDS[ui.tool]?.noTurn ? 0 : ui.dir; // el puente no gira
   const same = cur?.kind === ui.tool && cur.dir === dir; // ya está puesta así: el fantasma sólo la taparía
   const kind = BUILD_ORDER.includes(ui.tool) && !same && sim.valid(game, cell?.x, cell?.y) && !cur?.fixed ? ui.tool : null;
-  scene.setHover(cell, kind, dir, !cell || !kind || game.mode !== 'career' || game.money >= netPrice(cell, kind));
+  scene.setHover(cell, kind, dir, !cell || !kind || game.mode === 'sandbox' || game.money >= netPrice(cell, kind));
 }
 
 function applyTool(cell, dir = ui.dir) {
@@ -244,6 +250,11 @@ function drainEvents() {
       if (isBest) store.set(bestKey(game.lot), JSON.stringify({ level: game.level, earned: game.stats.earned }));
       store.set('save.career', null);
       hud.showOver(game, isBest);
+    } else if (ev.type === 'puzzleEnd') {
+      const all = loadStars(), next = PUZZLE_ORDER[PUZZLE_ORDER.indexOf(game.lot) + 1];
+      all[game.lot] = Math.max(all[game.lot] ?? 0, sim.puzzleStars(game).stars);
+      store.set('puzzles', JSON.stringify(all));
+      hud.showPuzzleEnd(game, next && sim.puzzleOpen(next, starsOf) ? next : null);
     }
   }
   return events;

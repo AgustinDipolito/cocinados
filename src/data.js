@@ -97,5 +97,38 @@ export const LOTS = {
     ['raw', 1, 1], ['belt', 2, 1, 0, 3, 1], ['grill', 4, 1], ['belt', 5, 1, 0, 6, 1], ['stock', 7, 1], ['belt', 8, 1, 0, 9, 1], ['belt', 10, 1, 1, 10, 4],
     ['bun', 1, 5], ['belt', 2, 5, 0, 9, 5], ['assembly', 10, 5], ['belt', 11, 5, 0, 13, 5], ['dispatch', 14, 5],
     ['cheese', 1, 8], ['belt', 2, 8, 0, 9, 8], ['belt', 10, 6, 3, 10, 8]] },
+  // Locales de los desafíos (PUZZLES): en un desafío todas las piezas dadas vienen fijas.
+  pzLine: { w: 10, h: 4, kitchen: [['raw', 1, 1], ['grill', 3, 1], ['assembly', 6, 1], ['dispatch', 9, 1], ['bun', 6, 3, 3]] },
+  pzCheese: { w: 10, h: 5, kitchen: [
+    ['raw', 1, 2], ['belt', 2, 2], ['grill', 3, 2], ['belt', 4, 2, 0, 5, 2], ['assembly', 6, 2], ['belt', 7, 2, 0, 8, 2], ['dispatch', 9, 2],
+    ['bun', 6, 0, 1], ['belt', 6, 1, 1]] },
+  pzSplit: { w: 6, h: 5, holes: [[0, 0, 1, 1], [0, 3, 1, 4]], pillars: [[3, 1, 3, 3]], kitchen: [ // la carne entra por (2, 2) y hay dos parrillas
+    ['raw', 0, 2], ['belt', 1, 2], ['belt', 2, 1, 3], ['grill', 2, 0], ['belt', 3, 0], ['assembly', 4, 0, 1], ['belt', 4, 1, 1], ['dispatch', 4, 2],
+    ['belt', 2, 3, 1], ['grill', 2, 4], ['belt', 3, 4], ['assembly', 4, 4, 3], ['belt', 4, 3, 3], ['bun', 5, 0, 2], ['bun', 5, 4, 2]] },
+  pzBridge: { w: 7, h: 5, kitchen: [ // la carne cruda baja por x = 2 y el pan cruza por y = 2
+    ['raw', 2, 0, 1], ['belt', 2, 1, 1], ['belt', 2, 3, 1], ['grill', 2, 4], ['belt', 3, 4], ['assembly', 4, 4], ['belt', 5, 4], ['dispatch', 6, 4],
+    ['bun', 0, 2], ['belt', 1, 2]] },
+  pzBudget: { w: 10, h: 5, kitchen: [
+    ['raw', 1, 2], ['belt', 2, 2], ['grill', 3, 2], ['belt', 4, 2, 0, 5, 2], ['assembly', 6, 2], ['belt', 7, 2, 0, 8, 2], ['dispatch', 9, 2],
+    ['bun', 6, 0, 1], ['belt', 6, 1, 1], ['cheese', 6, 3, 3]] },
+  pzHall: { w: 14, h: 3, pillars: [[6, 1, 6, 1]], kitchen: [['raw', 0, 0], ['bun', 0, 2], ['dispatch', 13, 1]] },
 };
 export const CAREER_LOTS = ['classic', 'hall', 'corner', 'columns', 'island']; // el orden del inicio
+
+// Desafíos: cada uno juega en el local de su misma clave (LOTS), en este orden; uno se abre al ganar el anterior.
+//   budget  dinero para construir (las entregas no suman; borrar devuelve todo)
+//   orders  [segundo, receta]: los pedidos llegan por guion, sin azar, con el plazo de Carrera
+//   limit   segundos para entregarlos todos
+//   spend   segunda estrella: gastar como mucho esto · belts: tercera estrella: terminar con como mucho estas cintas
+// Se gana entregando todos a tiempo; se pierde al vencerse un pedido o el límite.
+export const PUZZLE_REFUND = 1;
+const every = (n, gap, recipe) => Array.from({ length: n }, (_, i) => [i * gap, recipe]);
+export const PUZZLES = {
+  pzLine:   { budget: 20, orders: every(3, 12, 'classic'), limit: 90, spend: 12, belts: 6 },
+  pzCheese: { budget: 35, orders: every(3, 12, 'cheese'), limit: 100, spend: 25, belts: 6 },
+  pzSplit:  { budget: 35, orders: every(12, 2.5, 'classic'), limit: 120, spend: 35, belts: 7 },
+  pzBridge: { budget: 70, orders: every(3, 12, 'classic'), limit: 100, spend: 64, belts: 7 },
+  pzBudget: { budget: 150, orders: every(9, 3, 'double'), limit: 150, spend: 140, belts: 6 },
+  pzHall:   { budget: 200, orders: every(4, 10, 'classic'), limit: 100, spend: 180, belts: 14 },
+};
+export const PUZZLE_ORDER = Object.keys(PUZZLES);
