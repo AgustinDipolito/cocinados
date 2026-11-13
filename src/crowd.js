@@ -3,7 +3,7 @@
 
 // gap: distancia entre dos personas de la fila · speed: celdas por segundo de juego · look: segundos que
 // mira la fila llena quien llega antes de volverse.
-export const CROWD = { gap: 0.75, speed: 1.6, look: 1.2 };
+export const CROWD = { gap: 0.8, speed: 1.6, look: 1.2, size: 1.45 };
 
 /** Estado de un pedido, el mismo de su tarjeta: '' a tiempo, 'soon' por vencer, 'late' vencido. */
 export function orderRisk(o, time) {
@@ -19,7 +19,7 @@ export function orderRisk(o, time) {
  */
 export function curb({ W, H }) {
   const z0 = H + 0.5;
-  return { z0, z1: z0 + 1.6, z: z0 + 0.45, lane: z0 + 1.1, headX: W - 1.5, enterX: -4, leaveX: W + 4, x0: -4.5, x1: W + 4.5 };
+  return { z0, z1: z0 + 1.8, z: z0 + 0.5, lane: z0 + 1.25, headX: Math.min(W - 1.5, W / 2 + 2), enterX: -2, leaveX: W + 2, x0: -2.5, x1: W + 2.5 };
 }
 
 export const newCrowd = () => ({ people: new Map(), seq: 0, fresh: true });

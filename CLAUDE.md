@@ -65,7 +65,8 @@ proporciones del inspector, la mueve en `step` y la cuenta como lo que viaja), s
 y el arrastre de cinta en `main.js` pasa por encima sin reemplazarla. Si girarla no cambia nada, `noTurn: true` (queda en
 dirección 0, el inspector no ofrece Girar). Una fuente a demanda nueva se regula con `sourceNeed`.
 La barra de herramientas sale de `BUILD_ORDER`: con catorce piezas entra en 1024 px porque en notebook cada herramienta
-toma el ancho de su nombre (`style.css`); en teléfono se desplaza.
+toma el ancho de su nombre (`style.css`); en teléfono se desplaza. En notebook los botones de la barra de arriba van sólo
+con ícono (el nombre queda en `title` y `aria-label`) para que entre en un renglón.
 Una forma nueva de que un pedido deje la cola: su evento con `id` y su motivo de salida en `stepCrowd` (`crowd.js`);
 sin evento, el cliente desaparece en el acto. Una forma nueva de local: su frente en `curb` (`crowd.js`).
 Una mejora: `UPGRADES` (`data.js`), su valor de celda en `sim.js` (como `burners`/`stockCap`/`assembleTime`, y todo lugar que
@@ -179,8 +180,8 @@ navegador (`npm run shots`) no corre ahí: se corre a mano antes de subir.
   sigue a la que lo recibió. Sin ninguna salida posible se marca sin salida como una cinta.
 - Puente (`bridge`, $60): carril este-oeste en `item` (bajo) y norte-sur en `item2` (alto); cada producto guarda en `d` hacia
   dónde viaja y sale por el lado opuesto. No gira: queda en dirección 0.
-- Arrastre: la cinta pasa por encima de divisores y puentes (así se dibuja la segunda línea a través del puente); un toque
-  sí los reemplaza. Divisor y puente se ponen de a uno, con la dirección de `R`.
+- Arrastre: la cinta pasa por encima de divisores y puentes (así se dibuja la segunda línea a través del puente), también
+  cuando el arrastre empieza encima de uno; un toque sí los reemplaza, y se decide al soltar. Divisor y puente se ponen de a uno, con la dirección de `R`.
 - Mejoras (`UPGRADES`): parrilla de doble hornalla ($140, dos carnes a la vez), armadora con segundo brazo ($180, 2,5 s),
   almacén con estantes ($60, 16 carnes). Un solo nivel: `up` (booleano) en la celda; se guarda, girar lo conserva, reemplazar
   o borrar lo pierde; borrar devuelve la mitad de máquina más mejora; en Modo libre es gratis. Se compra con «Mejorar» en el

@@ -4,7 +4,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { BELT_TIME, BUILD_ORDER, RECIPES, DIAG, LOTS } from './data.js';
 import { isStuck, diagShares, valid } from './sim.js';
 import { C, BRIDGE_TOP, beltTexture, alertTexture, jamTexture, buildMachine, buildItem, buildLot, buildGhost, tileFrame, burger, buildCustomer } from './models.js';
-import { curb, newCrowd, stepCrowd } from './crowd.js';
+import { CROWD, curb, newCrowd, stepCrowd } from './crowd.js';
 
 const PITCH = THREE.MathUtils.degToRad(54); // cuánto mira hacia abajo la cámara
 const SURFACE = { belt: 0.185, assembly: 0.47, bridge: BRIDGE_TOP + 0.005 }; // altura a la que apoya un producto (bridge: carril alto del puente)
@@ -153,7 +153,7 @@ export function createScene(canvas) {
       if (!o) { o = buildCustomer(p.look); people.set(p.key, o); crowdLayer.add(o); }
       o.position.set(p.x, 0, p.z);
       o.rotation.y = p.heading;
-      o.scale.setScalar(THREE.MathUtils.clamp(Math.min(p.x - c.enterX, c.leaveX - p.x) / 0.8, 0, 1)); // asoma y se pierde en las puntas de la vereda
+      o.scale.setScalar(CROWD.size * THREE.MathUtils.clamp(Math.min(p.x - c.enterX, c.leaveX - p.x) / 0.8, 0, 1)); // asoma y se pierde en las puntas de la vereda
       o.userData.update(p.mark, p.walking, t);
       seen.add(p.key);
     }
@@ -228,7 +228,7 @@ export function createScene(canvas) {
     const r = canvas.getBoundingClientRect();
     const safe = { l: inset.left, t: inset.top, r: r.width - inset.right, b: r.height - inset.bottom };
     const c = curb(s); // el frente es el cordón de la vereda, y por encima de la fila entran las marcas de los clientes
-    const corners = [[0, 0, -0.3], [s.W, 0, -0.3], [0, 2, -0.3], [s.W, 2, -0.3], [-0.5, 0, c.z1], [s.W + 0.5, 0, c.z1], [c.headX, 1.4, c.z]];
+    const corners = [[0, 0, -0.3], [s.W, 0, -0.3], [0, 2, -0.3], [s.W, 2, -0.3], [-0.5, 0, c.z1], [s.W + 0.5, 0, c.z1], [c.headX, 1.4 * CROWD.size, c.z]];
     const bounds = () => {
       const b = { l: Infinity, t: Infinity, r: -Infinity, b: -Infinity };
       for (const [x, y, z] of corners) {

@@ -190,6 +190,10 @@ progress::-moz-progress-bar { background: var(--ok); }
 @media (min-width: 761px) and (max-width: 1340px) and (min-height: 521px) {
   #tools { gap: 4px; }
   .tool { width: auto; min-width: var(--touch); padding-inline: 6px; }
+  /* La barra de arriba en un renglón: los botones quedan con su ícono (el nombre sigue en title y aria-label). */
+  #stats { column-gap: var(--pad); }
+  #controls .lbl { display: none; }
+  #controls .btn { padding: 0 var(--gap); }
 }
 
 /* ---------- hojas ---------- */

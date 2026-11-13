@@ -149,8 +149,16 @@ canvas.addEventListener('pointerdown', e => {
   if (e.button === 1) gesture = { ...base, mode: 'pan', moved: true };
   else if (e.button === 2) gesture = { ...base, mode: 'right' };
   else if (ui.tool === 'inspect') gesture = { ...base, mode: 'tap' };
-  else { gesture = { mode: 'paint', last: cell }; if (cell) applyTool(cell); }
+  else {
+    // Con la cinta, un divisor o puente bajo el dedo espera al final del gesto: si fue un toque se reemplaza, si fue
+    // un arrastre la cinta sigue de largo por encima.
+    const wait = ui.tool === 'belt' && cell && keep(cell);
+    gesture = { mode: 'paint', last: cell, tap: wait ? cell : null };
+    if (cell && !wait) applyTool(cell);
+  }
 });
+/** Un divisor o puente: la cinta arrastrada pasa por encima sin reemplazarlo. */
+const keep = c => { const k = sim.at(game, c.x, c.y)?.kind; return k !== 'belt' && KINDS[k]?.carries; };
 
 canvas.addEventListener('pointermove', e => {
   const prev = pointers.get(e.pointerId);
@@ -168,7 +176,7 @@ canvas.addEventListener('pointermove', e => {
       const d = last ? DIRS.findIndex(([dx, dy]) => dx === cell.x - last.x && dy === cell.y - last.y) : -1;
       // La cinta toma la dirección del arrastre y pasa por encima de divisores y puentes sin reemplazarlos: así se
       // dibuja la segunda línea a través de un puente. Un toque sí los reemplaza. Divisor y puente se ponen de a uno.
-      const keep = c => { const k = sim.at(game, c.x, c.y)?.kind; return k !== 'belt' && KINDS[k]?.carries; };
+      gesture.tap = null;
       if (ui.tool === 'belt' && d >= 0) { ui.dir = d; for (const c of [last, cell]) if (!keep(c)) applyTool(c, d); }
       else if ((ui.tool === 'belt' && !keep(cell)) || ui.tool === 'erase') applyTool(cell);
       gesture.last = cell;
@@ -184,6 +192,7 @@ function pointerEnd(e) {
     const cell = scene.pick(game, e.clientX, e.clientY);
     if (gesture.mode === 'tap') select(cell);
     if (gesture.mode === 'right' && cell) sim.erase(game, cell.x, cell.y);
+    if (gesture.mode === 'paint' && gesture.tap) applyTool(gesture.tap);
   }
   if (!pointers.size) gesture = null;
 }

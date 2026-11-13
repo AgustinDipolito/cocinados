@@ -133,7 +133,7 @@ await pool(runs, async ([lang, vp]) => {
   const checkQueue = async label => {
     const r = await page.evaluate(() => {
       const { game, scene } = window.__bb, list = scene.shownCustomers().filter(p => p.queued).sort((a, b) => b.x - a.x);
-      const hidden = list.filter(p => [0.1, 1.15].some(h => { const q = scene.project(p.x - 0.5, p.z - 0.5, h); return document.elementFromPoint(q.x, q.y)?.id !== 'scene'; }));
+      const hidden = list.filter(p => [0.1, 1.15 * 1.45].some(h => { const q = scene.project(p.x - 0.5, p.z - 0.5, h); return document.elementFromPoint(q.x, q.y)?.id !== 'scene'; }));
       return { shown: list.map(p => p.key).join(), want: game.orders.map(o => o.id).join(), loose: list.filter(p => !p.settled).length, hidden: hidden.map(p => p.key).join() };
     });
     check(where, label, r.want && r.shown === r.want, `clientes ${r.shown || 'ninguno'}, pedidos ${r.want || 'ninguno'}`);
@@ -232,8 +232,9 @@ await pool(runs, async ([lang, vp]) => {
   await page.evaluate(() => { window.__bb.game.money = 100; });
   await until('Mejorar corto, con lo que falta', () => document.querySelector('[data-act=upgradeSelected].short')?.textContent.includes('$40'));
   await shot('4b-mejorable-sin-dinero');
+  await page.evaluate(() => { document.querySelector('#toast').textContent = ''; }); // el aviso se apaga a los 3,2 s: se mira su texto, que queda
   await click('[data-act=upgradeSelected]');
-  await until('aviso de que no alcanza para mejorar', () => document.querySelector('#toast.show'));
+  await until('aviso de que no alcanza para mejorar', () => document.querySelector('#toast').textContent.includes('$40'));
   check(where, 'mejorar sin dinero', await page.evaluate(() => { const { game, sim } = window.__bb; return game.money === 100 && !sim.at(game, 3, 1).up; }), 'cobró o mejoró sin plata');
   await page.evaluate(() => { window.__bb.game.money = 300; });
   await until('Mejorar con plata', () => document.querySelector('[data-act=upgradeSelected]:not(.short)'));
@@ -354,6 +355,13 @@ await pool(runs, async ([lang, vp]) => {
   await page.mouse.up();
   await until('divisor, puente y cinta cruzada', () => { const { sim, game } = window.__bb, k = (x, y) => sim.at(game, x, y)?.kind;
     return k(15, 7) === 'splitter' && k(13, 2) === 'bridge' && k(12, 2) === 'belt' && k(14, 2) === 'belt' && sim.at(game, 14, 2).dir === 0; });
+  for (const [i, [x, y]] of [[13, 2], [13, 3]].entries()) { // un arrastre que empieza sobre el puente tampoco lo borra
+    const p = await cellAt(x, y);
+    if (i === 0) { await page.mouse.move(p.x, p.y); await page.mouse.down(); } else await page.mouse.move(p.x, p.y, { steps: 6 });
+  }
+  await page.mouse.up();
+  await until('arrastre desde el puente', () => { const { sim, game } = window.__bb;
+    return sim.at(game, 13, 2)?.kind === 'bridge' && sim.at(game, 13, 3)?.kind === 'belt' && sim.at(game, 13, 3).dir === 1; });
   await click('[data-act=setTool][data-arg=inspect]');
   await clickCell(13, 2);
   await until('inspector del puente', () => window.__bb.ui.selected?.x === 13 && !document.querySelector('#inspector').hidden);
