@@ -185,6 +185,9 @@ progress::-moz-progress-bar { background: var(--ok); }
 .tool.active .price { color: var(--ink); }
 .tool.short .price { color: var(--bad); }
 .tool:disabled { cursor: default; color: var(--ink-soft); }
+/* al tope: apagada pero elegible; sin rojo (eso es la plata) y sin amarillo salvo elegida */
+.tool.full { color: var(--ink-soft); }
+.tool.full .thumb { opacity: .5; }
 .tool .dir { display: grid; transform: rotate(var(--turn)); }
 .sep { flex: none; width: var(--border); background: var(--line); margin: 6px 2px; }
 .toolCap { display: none; } /* la leyenda es de la compacta: en escritorio cada herramienta lleva su nombre */

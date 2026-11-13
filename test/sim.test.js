@@ -2,10 +2,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as sim from '../src/sim.js';
-import { STEP, KINDS, HEARTS, LOT, START_MONEY, RECIPES, QUEUE_MAX } from '../src/data.js';
+import { STEP, KINDS, HEARTS, LOT, START_MONEY, RECIPES, QUEUE_MAX, LIMITS } from '../src/data.js';
 
 const run = (s, seconds) => { for (let i = 0; i < Math.round(seconds / STEP); i++) sim.step(s, STEP); return s; };
 const kinds = s => s.cells.filter(Boolean).map(c => c.kind);
+// Construye sin el tope de piezas por nivel (LIMITS): para las pruebas que miran otra cosa. Poner es instantáneo.
+const unlimited = (s, f) => { const keep = { ...LIMITS }; for (const k in keep) delete LIMITS[k]; try { return f(); } finally { Object.assign(LIMITS, keep); } };
 
 test('carrera: la cocina inicial entrega a tiempo el primer pedido y lo cobra', () => {
   const s = sim.newGame('career', 1);
@@ -59,9 +61,9 @@ test('un guardado roto o de otra versión se descarta', () => {
 
 test('construir cuesta, borrar devuelve la mitad y sin dinero no se construye', () => {
   const s = sim.newGame('career', 1);
-  assert.deepEqual(sim.place(s, 0, 5, 'grill', 0), { ok: true });
+  assert.deepEqual(unlimited(s, () => sim.place(s, 0, 5, 'grill', 0)), { ok: true });
   assert.equal(s.money, START_MONEY - KINDS.grill.cost);
-  assert.equal(sim.place(s, 1, 5, 'assembly', 0).reason, 'money');
+  assert.equal(unlimited(s, () => sim.place(s, 1, 5, 'assembly', 0)).reason, 'money');
   assert.equal(sim.at(s, 1, 5), null);
   assert.equal(s.money, START_MONEY - KINDS.grill.cost);
   assert.equal(sim.erase(s, 0, 5), true);
@@ -235,7 +237,7 @@ test('invariante: el estado de cada pedido coincide con lo que hay en la cocina,
     for (let i = 0; i < 2500 && !s.over; i++) {
       if (rnd(50) === 0) {
         const x = rnd(s.W), y = rnd(s.H);
-        if (rnd(3) === 0) sim.erase(s, x, y); else sim.place(s, x, y, kindsToPlace[rnd(kindsToPlace.length)], rnd(4));
+        if (rnd(3) === 0) sim.erase(s, x, y); else unlimited(s, () => sim.place(s, x, y, kindsToPlace[rnd(kindsToPlace.length)], rnd(4)));
       }
       sim.step(s, STEP);
       const jobs = new Map(), burgers = new Map(), add = (m, id) => m.set(id, (m.get(id) ?? 0) + 1);
@@ -312,7 +314,7 @@ test('diagnóstico: girar conserva el acumulado; reemplazar y borrar lo pierden'
   assert.ok(before.work > 0.2);
   sim.place(s, 3, 1, 'grill', 1);
   assert.deepEqual(sim.diagShares(sim.at(s, 3, 1)), before);
-  sim.place(s, 3, 1, 'stock', 0);
+  unlimited(s, () => sim.place(s, 3, 1, 'stock', 0));
   assert.equal(sim.diagShares(sim.at(s, 3, 1)), null);
   sim.erase(s, 3, 1); sim.place(s, 3, 1, 'grill', 0);
   assert.equal(sim.diagShares(sim.at(s, 3, 1)), null);

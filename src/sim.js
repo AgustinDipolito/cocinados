@@ -3,10 +3,10 @@
 import {
   DIRS, BELT_TIME, STUCK_AFTER, QUEUE_MAX, LATE_PAY, GRACE, HEARTS, REFUND, CAP, TIMES, KINDS,
   SOURCE_OF, INGREDIENTS, RECIPES, SANDBOX_DEADLINE, SANDBOX_INTERVAL, START_MONEY, orderInterval,
-  deliveriesFor, LOT, LOTS, LOTGEN, DIAG, UPGRADES, PUZZLES, PUZZLE_REFUND, PUZZLE_ORDER, PICKS, UNDO, GROUP,
+  deliveriesFor, LOT, LOTS, LOTGEN, DIAG, UPGRADES, PUZZLES, PUZZLE_REFUND, PUZZLE_ORDER, PICKS, UNDO, GROUP, LIMITS,
 } from './data.js';
 
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 function rand(s) { // mulberry32: el azar sale de la semilla guardada, así una partida se puede repetir
   s.seed = (s.seed + 0x6D2B79F5) | 0;
@@ -300,7 +300,8 @@ function finishOrder(s, id, x, y) {
     s.level++;
     s.hearts = Math.min(HEARTS, s.hearts + 1);
     const unlocked = Object.keys(RECIPES).filter(k => RECIPES[k].level === s.level);
-    emit(s, 'levelup', { level: s.level, unlocked });
+    const more = Object.keys(LIMITS).filter(k => LIMITS[k].includes(s.level)); // tipos de los que ahora entra una más
+    emit(s, 'levelup', { level: s.level, unlocked, more });
   }
 }
 
@@ -337,7 +338,14 @@ function loseContents(s, c) {
   }
 }
 
-/** Devuelve { ok } o { ok:false, reason } con reason 'same' | 'money' | 'out' | 'fixed' (máquina fija del local). */
+/** Cuántas piezas de ese tipo hay en el terreno (las fijas del local cuentan). */
+export const countOf = (s, kind) => s.cells.reduce((n, c) => n + (c?.kind === kind ? 1 : 0), 0);
+/** Cuántas piezas de ese tipo entran ahora: Infinity fuera de Carrera o para un tipo sin tope (LIMITS). */
+export const limitOf = (s, kind) => (isCareer(s) && LIMITS[kind] ? LIMITS[kind].filter(l => l <= s.level).length : Infinity);
+/** El nivel en que se habilita una pieza más de ese tipo, o null si no hay más o no hay tope. */
+export const nextLimit = (s, kind) => (isCareer(s) && LIMITS[kind]?.find(l => l > s.level)) || null;
+
+/** Devuelve { ok } o { ok:false, reason } con reason 'same' | 'limit' (tope del nivel) | 'money' | 'out' | 'fixed' (máquina fija del local). */
 export function place(s, x, y, kind, dir = 0) {
   if (!valid(s, x, y) || s.over) return { ok: false, reason: 'out' };
   if (KINDS[kind].noTurn) dir = 0; // el puente no tiene frente: girarlo no cambia nada
@@ -349,6 +357,8 @@ export function place(s, x, y, kind, dir = 0) {
     cur.dir = dir;
     return { ok: true };
   }
+  // la celda pasa a tener una pieza de este tipo que antes no tenía: mira el tope (girar ya volvió arriba)
+  if (countOf(s, kind) >= limitOf(s, kind)) return { ok: false, reason: 'limit' };
   const price = cost(s, kind) - (cur ? refund(s, cur) : 0);
   if (paid(s) && s.money < price) return { ok: false, reason: 'money' };
   note(s, x, y, cur, paid(s) ? -price : 0);

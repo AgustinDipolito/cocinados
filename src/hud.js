@@ -1,6 +1,6 @@
 // El HUD es HTML encima del lienzo 3D. Lee el estado y avisa los toques con actions.*; no toca la simulación.
 import { BUILD_ORDER, RECIPES, KINDS, CAP, UPGRADES, QUEUE_MAX, HEARTS, PUZZLES, deliveriesFor } from './data.js';
-import { at, cost, refund, upgradeCost, burners, stockCap, assembleTime, expandCost, canExpand, lotGrow, sourceNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck, puzzleStars, lotOf, canUndo } from './sim.js';
+import { at, cost, refund, upgradeCost, burners, stockCap, assembleTime, expandCost, canExpand, lotGrow, sourceNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck, puzzleStars, lotOf, canUndo, countOf, limitOf, nextLimit } from './sim.js';
 import { t, LANGS, getLang } from './i18n.js';
 import { orderRisk } from './crowd.js';
 
@@ -156,17 +156,26 @@ export function createHud(root, actions, thumbs) {
   }
 
   function renderTools(s, ui) {
-    const tool = (id, pic, name, price, title, off = false) =>
-      `<button class="tool ${ui.tool === id ? 'active' : ''} ${off ? 'short' : ''}" data-act="setTool" data-arg="${id}" aria-pressed="${ui.tool === id}" title="${esc(title)}">
-        ${pic}<span class="name">${name}</span>${price === null ? '' : `<span class="price">${price ? money(price) : t('free')}</span>`}</button>`;
-    // El renglón de leyenda (sólo en compacta, donde los botones no llevan nombre): la herramienta elegida, su precio y
-    // hacia dónde va a apuntar en pantalla.
+    // full: llegó a su tope de este nivel. Sigue siendo elegible (para girar lo puesto y para que el intento explique).
+    const tool = (id, pic, name, price, title, off = false, full = null) =>
+      `<button class="tool ${ui.tool === id ? 'active' : ''} ${off && !full ? 'short' : ''} ${full ? 'full' : ''}" data-act="setTool" data-arg="${id}" aria-pressed="${ui.tool === id}" title="${esc(full ? `${title} ${full}` : title)}"${full ? ` aria-label="${esc(`${name}. ${full}`)}"` : ''}>
+        ${pic}<span class="name">${name}</span>${price === null ? '' : `<span class="price">${full ? t('toolFull') : price ? money(price) : t('free')}</span>`}</button>`;
+    // El tope de una pieza explicado (null si todavía entra otra): cuántas y en qué nivel se habilita la siguiente.
+    const limitText = (k, last, next) => {
+      if (countOf(s, k) < limitOf(s, k)) return null;
+      const n = limitOf(s, k), level = nextLimit(s, k);
+      return level == null ? t(last, { n }) : t(next, { n, level });
+    };
+    // El renglón de leyenda (sólo en compacta, donde los botones no llevan nombre): la herramienta elegida, su precio
+    // (o su tope) y hacia dónde va a apuntar en pantalla.
     const sdir = (ui.dir + ui.rot) % 4, k = ui.tool, built = BUILD_ORDER.includes(k);
     const name = built ? t('kind_' + k) : t(k === 'erase' ? 'toolErase' : 'toolInspect');
+    const capFull = built && limitText(k, 'toolCapFullLast', 'toolCapFull');
     const cap = (built && !KINDS[k].noTurn && k !== 'dispatch' ? t('toolCapDir', { name, dir: t('dir' + sdir) }) : t('toolCap', { name }))
-      + (built ? ` · ${cost(s, k) ? money(cost(s, k)) : t('free')}` : '');
+      + (built ? ` · ${capFull || (cost(s, k) ? money(cost(s, k)) : t('free'))}` : '');
     let h = `<span class="toolCap">${cap}</span>` + tool('inspect', ICON.inspect, t('toolInspect'), null, t('toolInspect'));
-    for (const k of BUILD_ORDER) h += tool(k, img(k), t('kind_' + k), cost(s, k), `${t('kindLong_' + k)}. ${t('kindHint_' + k, { max: CAP.stock })}`, s.mode !== 'sandbox' && s.money < cost(s, k));
+    for (const k of BUILD_ORDER) h += tool(k, img(k), t('kind_' + k), cost(s, k), `${t('kindLong_' + k)}. ${t('kindHint_' + k, { max: CAP.stock })}`,
+      s.mode !== 'sandbox' && s.money < cost(s, k), limitText(k, 'toastLimitLast', 'toastLimit'));
     h += tool('erase', ICON.erase, t('toolErase'), null, t('toolErase'));
     h += `<span class="sep"></span>
       <button class="tool" data-act="rotate" title="${t('rotateLabel', { dir: t('dir' + sdir) })}" aria-label="${t('rotateLabel', { dir: t('dir' + sdir) })}">

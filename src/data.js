@@ -69,7 +69,24 @@ export const SANDBOX_INTERVAL = 17;
 export const DIAG = { tau: 60, tie: 0.02, minWork: 0.05, jam: 0.5, busy: 0.75 };
 
 export const START_MONEY = 100;
-export const orderInterval = level => Math.max(3.5, 13 - 2.5 * (level - 1)); // segundos entre clientes
+// Segundos entre clientes en Carrera. Hasta el nivel `from` baja `step` por nivel (como siempre); desde ahí cada nivel
+// acorta la espera con `decay`: nunca deja de apretar. `min` sólo cuida que el paso de la simulación alcance.
+export const ORDERS = { first: 13, step: 2.5, plateau: 3.5, from: 5, decay: 0.88, min: 0.3 };
+export const orderInterval = level => (level <= ORDERS.from
+  ? Math.max(ORDERS.plateau, ORDERS.first - ORDERS.step * (level - 1))
+  : Math.max(ORDERS.min, ORDERS.plateau * ORDERS.decay ** (level - ORDERS.from)));
+// Carrera: cuántas piezas de cada tipo entran según el nivel. Cada lista da el nivel en que se habilita la primera,
+// la segunda, la tercera… Un tipo que no figura no tiene tope (cintas, divisor, filtro, puente). Sin él, cada isla
+// de siete celdas se abastecía sola y se copiaba.
+export const LIMITS = {
+  dispatch: [1],
+  raw:      [1, 7, 12, 16],
+  bun:      [1, 9, 14],
+  cheese:   [1, 11, 16],
+  grill:    [1, 3, 6, 9, 12, 15],
+  stock:    [1, 3, 6, 9, 12, 15],
+  assembly: [1, 4, 7, 10, 13, 16],
+};
 export const deliveriesFor = level => level * level + 3 * level; // entregas acumuladas para pasar de `level`
 
 export const LOT = {

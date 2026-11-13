@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as sim from '../src/sim.js';
-import { STEP, RECIPES, START_MONEY, LOTS, CAREER_LOTS, LOT, LOTGEN } from '../src/data.js';
+import { STEP, RECIPES, START_MONEY, LOTS, CAREER_LOTS, LOT, LOTGEN, LIMITS } from '../src/data.js';
 
 const run = (s, seconds) => { for (let i = 0; i < Math.round(seconds / STEP) && !s.over; i++) sim.step(s, STEP); return s; };
 const floor = s => s.cells.map(c => c !== false);
@@ -34,7 +34,7 @@ test('lo que no es piso: no se construye, no se borra, no recibe productos y sig
   assert.deepEqual(sim.place(s, 4, 2, 'belt', 0), { ok: false, reason: 'out' });
   assert.equal(sim.erase(s, 4, 2), false);
   // una cinta que apunta a una columna: el producto queda sin salida y nunca entra
-  sim.place(s, 3, 5, 'raw', 0); sim.place(s, 4, 5, 'belt', 3);
+  s.level = LIMITS.raw[1]; sim.place(s, 3, 5, 'raw', 0); s.level = 1; sim.place(s, 4, 5, 'belt', 3); // la segunda fuente de carne entra en su nivel
   run(s, 10);
   assert.equal(s.cells[2 * s.W + 4], false);
   assert.ok(sim.isStuck(s, 4, 5), 'la cinta que da contra la columna se marca sin salida');

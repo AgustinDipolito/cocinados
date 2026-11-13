@@ -2,12 +2,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as sim from '../src/sim.js';
-import { STEP, KINDS, UPGRADES, CAP, START_MONEY, QUEUE_MAX } from '../src/data.js';
+import { STEP, KINDS, UPGRADES, CAP, START_MONEY, QUEUE_MAX, LIMITS } from '../src/data.js';
 
 const run = (s, seconds, each = () => {}) => {
   for (let i = 0; i < Math.round(seconds / STEP) && !s.over; i++) { each(s); sim.step(s, STEP); }
   return s;
 };
+
+// Construye sin el tope de piezas por nivel (LIMITS): para las pruebas que miran otra cosa. Poner es instantáneo.
+const unlimited = (s, f) => { const keep = { ...LIMITS }; for (const k in keep) delete LIMITS[k]; try { return f(); } finally { Object.assign(LIMITS, keep); } };
 
 /** Un modo libre vacío, sin pedidos automáticos, para armar a mano. */
 function blank() {
@@ -87,7 +90,7 @@ test('reembolso: borrar o reemplazar devuelve la mitad de lo invertido, mejora i
   assert.equal(s.money, 1000 - UPGRADES.grill.cost + (KINDS.grill.cost + UPGRADES.grill.cost) / 2);
   const before = s.money;
   sim.upgrade(s, 7, 3);
-  sim.place(s, 7, 3, 'dispatch', 0); // reemplazar descuenta lo que devuelve la armadora mejorada
+  unlimited(s, () => sim.place(s, 7, 3, 'dispatch', 0)); // reemplazar descuenta lo que devuelve la armadora mejorada
   assert.equal(s.money, before - UPGRADES.assembly.cost - KINDS.dispatch.cost + (KINDS.assembly.cost + UPGRADES.assembly.cost) / 2);
   sim.place(s, 7, 3, 'assembly', 0);
   assert.equal(sim.at(s, 7, 3).up, false);

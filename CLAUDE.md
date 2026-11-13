@@ -56,13 +56,16 @@ Deshacer en `sim.js`: `undoMark(s)` (abre un grupo: lo que se construye hasta el
 (`{ ok, n }` o `reason` `'none' | 'late' | 'money'`), `canUndo(s)`; `s.undo` es una lista de grupos de acciones
 `{ x, y, t, prev, money, keep }`. Filtro: `setPick(s, x, y, tipo)` (`ok` o `reason` `'out' | 'fixed' | 'same'`), `PICKS` en
 `data.js`, `exits(c, d, tipo)`. Grupos: `GROUP` en `data.js`, pedido con `group`, evento `tip` con `{ x, y, amount }`.
+Topes: `LIMITS` en `data.js`; `countOf(s, tipo)`, `limitOf(s, tipo)` (`Infinity` fuera de Carrera o sin tope), `nextLimit(s, tipo)`
+(el nivel en que entra otra, o null); `place` puede dar `reason: 'limit'`. Ritmo: `ORDERS` y `orderInterval(nivel)` en `data.js`.
+Una máquina nueva con tope se anota también en `LIMITS`.
 Desafíos en `src/sim.js`: `puzzleStars(s)` (`{ won, spent, belts, spendOk, beltsOk, stars }`), `puzzleOpen(clave, estrellas)`;
 en el HUD, `stars(n, total)` (estrellas llenas y huecas en SVG) y `showPuzzleEnd(s, siguiente)`.
 
 **Idiomas.** Español (origen, voseo, sin exclamaciones) e inglés. Mecanismo: `STRINGS` y `t()` en
 `src/i18n.js`; `t()` tira error si la clave no existe y la prueba compara idiomas.
 
-**Arnés.** Lo que se corre antes de subir: `node --test --test-concurrency=1` (134 pruebas, medio minuto), `npm run build`
+**Arnés.** Lo que se corre antes de subir: `node --test --test-concurrency=1` (148 pruebas, entre medio minuto y minuto y medio), `npm run build`
 (1 s, y falla si un módulo importa un nombre que no existe) y `node tools/mutate.mjs --check`. `npm run shots` NO se corre
 más en la máquina del dueño: dos corridas en paralelo con WebGL por software la reiniciaron (2026-11-12), y las capturas no
 se vuelven a tomar. Lo que el arnés medía en pantalla lo mira el dueño jugando, después de publicar. `tools/shots.mjs`
@@ -252,6 +255,21 @@ de publicar: la prueba en pantalla es el QA del dueño sobre lo publicado, y lo 
 - Marca a batir: el enlace de una sala puede llevar `&nivel=<n>`. El inicio dice «Te desafían a pasar el nivel n» y la
   hoja de cierre dice si se pasó; desde esa hoja se copia el enlace con la marca propia. Sin servidor: la marca viaja en
   el enlace y nadie la comprueba.
+- Topes por nivel (`LIMITS`, sólo Carrera): un despacho en todo el juego; una fuente de cada ingrediente, una parrilla, un
+  almacén y una armadora al empezar, y una más de cada una en los niveles de su lista. Cintas, divisor, filtro y puente no
+  tienen tope. Nació de una medición: dos «islas» de 7 celdas sin ninguna cinta (carne, parrilla, almacén, armadora y
+  despacho en fila, pan y queso pegados a la armadora) jugaban 30 minutos, llegaban al nivel 21 y no perdían un cliente.
+  Con una sola fuente y un solo despacho la isla no se copia: crecer es repartir y juntar. La herramienta que llegó a su
+  tope se ve apagada y dice «Tope»; el intento avisa cuándo se habilita otra, y subir de nivel dice qué se habilitó
+  (`levelup.more`). Deshacer restaura sin mirar el tope, y una partida guardada con piezas de más no se recorta.
+- Ritmo sin techo (`ORDERS`): los niveles 1 a 5 como siempre (13, 10,5, 8, 5,5 y 3,5 s entre clientes); desde el 6 cada
+  nivel espera un 12 % menos. Antes el ritmo quedaba fijo en 3,5 s y pasado el nivel 5 el juego se ponía más fácil (los
+  testers pedían a mano). Ahora toda cocina cierra y el puntaje es el nivel. Medido con plata de sobra: la isla sola
+  cierra en el nivel 6 o 7 a los 6 minutos; con parrilla y armadora mejoradas, en el 9 o 10 a los 8; la cocina inicial de
+  El clásico sin tocar, en el 7 a los 6.
+- Sigue abierto: una sola isla mejorada todavía llega al nivel 9 sin cintas, porque una máquina le pasa el producto a la de
+  al lado. Si los testers siguen armándola, las palancas que quedan son que todo viaje por cinta, o proveedores contra la
+  pared del fondo y despacho al frente. Son reglas del prototipo: se cambian con permiso.
 - Descartada una segunda familia de producto (freidora por tandas): no le gustó al dueño del juego.
 - Diez desafíos. Los cuatro de la segunda tanda combinan piezas ya enseñadas: El cruce (un solo puente alcanza si pan y
   queso viajan juntos), El rodeo (despacho rodeado de columnas), El cuello (mejorar la armadora, no la parrilla) y El

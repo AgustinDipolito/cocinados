@@ -138,6 +138,13 @@ const MUTATIONS = [
   ['el grupo se forma con la cola casi llena', 'src/sim.js', 's.orders.length + 2 > QUEUE_MAX', 's.orders.length + 1 > QUEUE_MAX'],
   ['el grupo tira el azar bajo el nivel', 'src/sim.js', "if (!isCareer(s) || s.level < GROUP.level || s.orders.length + 2 > QUEUE_MAX || rand(s) >= GROUP.chance)", "if (rand(s) >= GROUP.chance || !isCareer(s) || s.level < GROUP.level || s.orders.length + 2 > QUEUE_MAX)"],
   ['los dos del grupo nacen encimados', 'src/crowd.js', 'x: c.enterX - born++ * CROWD.gap, z: c.z', 'x: c.enterX, z: c.z'],
+  // topes por nivel y ritmo sin techo
+  ['el tope de piezas no se mira', 'src/sim.js', "  if (countOf(s, kind) >= limitOf(s, kind)) return { ok: false, reason: 'limit' };\n", ''],
+  ['el tope se mira también al girar', 'src/sim.js', '  if (cur && cur.kind === kind) { // misma máquina', "  if (cur && cur.kind === kind && countOf(s, kind) > limitOf(s, kind)) return { ok: false, reason: 'limit' };\n  if (cur && cur.kind === kind) { // misma máquina"],
+  ['el tope vale en Modo libre y en los desafíos', 'src/sim.js', '(isCareer(s) && LIMITS[kind] ? ', '(LIMITS[kind] ? '],
+  ['subir de nivel no dice qué piezas se habilitan', 'src/sim.js', "emit(s, 'levelup', { level: s.level, unlocked, more });", "emit(s, 'levelup', { level: s.level, unlocked });"],
+  ['el ritmo vuelve a tener piso en 3,5 s', 'src/data.js', 'Math.max(ORDERS.min, ORDERS.plateau * ORDERS.decay', 'Math.max(ORDERS.plateau, ORDERS.plateau * ORDERS.decay'],
+  ['los niveles 1 a 5 cambian de ritmo', 'src/data.js', 'ORDERS.first - ORDERS.step * (level - 1)', 'ORDERS.first - 3 * (level - 1)'],
 ];
 
 const TIMEOUT = 180000;

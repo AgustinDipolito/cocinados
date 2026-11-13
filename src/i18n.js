@@ -65,6 +65,10 @@ export const STRINGS = {
     rotateLabel: 'Girar la salida. Ahora apunta hacia {dir}.',
     dir0: 'la derecha', dir1: 'abajo', dir2: 'la izquierda', dir3: 'arriba',
     toolCap: '{name}', toolCapDir: '{name}, hacia {dir}',
+    toolFull: 'Tope', toolCapFull: 'tope {n}, otra en nivel {level}', toolCapFullLast: 'tope {n}',
+    toastLimit: 'Llegaste al tope de esa pieza en este nivel: {n}. Se habilita otra en el nivel {level}.',
+    toastLimitLast: 'Tope de esa pieza: {n}. No se habilitan más.',
+    toastMore: 'Ya entra otra de: {kinds}.',
     actView: 'Girar la vista',
     toastUpgradeHint: 'La marca dorada señala una máquina que no da abasto: tocala para mejorarla.',
     expandLabel: 'Ampliar el terreno a {w} por {h} celdas',
@@ -163,7 +167,7 @@ export const STRINGS = {
 
     helpGoal: 'Entregá cada pedido antes de que se le acabe el tiempo. La carne sale del proveedor, se cocina en la parrilla, espera en el almacén y va a la armadora. El pan y el queso salen cuando un pedido los necesita.',
     helpBuild: 'Elegí una máquina de la barra y tocá una celda. Las cintas se dibujan arrastrando y toman la dirección del arrastre. Cada máquina saca su producto por el lado de la flecha amarilla. El divisor reparte una cinta entre varias salidas, el filtro saca por los costados el ingrediente que elijas y el puente deja cruzar dos cintas. La parrilla, la armadora y el almacén se mejoran una vez desde el inspector, y la marca dorada señala la que conviene mejorar.',
-    helpCareer: 'En Carrera, cada entrega paga y te acerca al nivel siguiente, donde los clientes llegan más seguido. Un cliente que se va sin su pedido te saca un punto de reputación. Sin puntos, la cocina cierra. Desde el nivel 3 a veces llegan dos juntos y, si los dos salen a tiempo, dejan propina. En Desafíos el dinero es fijo y gana quien entrega todos los pedidos a tiempo.',
+    helpCareer: 'En Carrera, cada entrega paga y te acerca al nivel siguiente, donde los clientes llegan más seguido. Un cliente que se va sin su pedido te saca un punto de reputación. Sin puntos, la cocina cierra. Desde el nivel 3 a veces llegan dos juntos y, si los dos salen a tiempo, dejan propina. Cada nivel habilita más máquinas, pero fuentes y despacho hay pocos: la cocina crece repartiendo y juntando con cintas. En Desafíos el dinero es fijo y gana quien entrega todos los pedidos a tiempo.',
     helpKeys: 'Teclado: R gira, Q y E giran la vista, Espacio pausa, Esc vuelve a Inspeccionar, las flechas mueven el cursor, Enter construye, Supr borra, Z o Ctrl+Z deshace, WASD mueve la cámara, + y − acercan y alejan. Mouse: clic derecho borra, la rueda acerca y el botón del medio arrastra la vista.',
 
     boardLabel: 'Cocina. Las flechas mueven el cursor y Enter construye.',
@@ -235,6 +239,10 @@ export const STRINGS = {
     rotateLabel: 'Rotate the output. It now points {dir}.',
     dir0: 'right', dir1: 'down', dir2: 'left', dir3: 'up',
     toolCap: '{name}', toolCapDir: '{name}, facing {dir}',
+    toolFull: 'Max', toolCapFull: 'max {n}, one more at level {level}', toolCapFullLast: 'max {n}',
+    toastLimit: 'You reached the limit for that piece at this level: {n}. One more unlocks at level {level}.',
+    toastLimitLast: 'Limit for that piece: {n}. No more unlock.',
+    toastMore: 'One more fits now: {kinds}.',
     actView: 'Rotate view',
     toastUpgradeHint: 'The gold mark points at a machine that cannot keep up: tap it to upgrade it.',
     expandLabel: 'Expand the lot to {w} by {h} cells',
@@ -333,7 +341,7 @@ export const STRINGS = {
 
     helpGoal: 'Deliver every order before its time runs out. Meat leaves the supplier, cooks on the grill, waits in storage and goes to the assembler. Buns and cheese come out when an order needs them.',
     helpBuild: 'Pick a machine from the bar and tap a cell. Belts are drawn by dragging and take the direction of the drag. Every machine puts its product out on the side of the yellow arrow. The splitter shares one belt among several outputs, the filter sends the ingredient you choose out the sides and the bridge lets two belts cross. The grill, the assembler and the storage can be upgraded once from the inspector, and the gold mark points at the one worth upgrading.',
-    helpCareer: 'In Career, every delivery pays and brings you closer to the next level, where customers arrive more often. A customer who leaves without their order costs a reputation point. With no points left, the kitchen closes. From level 3, two customers sometimes arrive together and leave a tip if both orders are on time. In Challenges the money is fixed and you win by delivering every order on time.',
+    helpCareer: 'In Career, every delivery pays and brings you closer to the next level, where customers arrive more often. A customer who leaves without their order costs a reputation point. With no points left, the kitchen closes. From level 3, two customers sometimes arrive together and leave a tip if both orders are on time. Each level allows more machines, but sources and dispatch stay few: the kitchen grows by splitting and merging with belts. In Challenges the money is fixed and you win by delivering every order on time.',
     helpKeys: 'Keyboard: R rotates, Q and E rotate the view, Space pauses, Esc goes back to Inspect, arrows move the cursor, Enter builds, Delete removes, Z or Ctrl+Z undoes, WASD moves the camera, + and − zoom. Mouse: right click removes, the wheel zooms and the middle button drags the view.',
 
     boardLabel: 'Kitchen. Arrows move the cursor and Enter builds.',

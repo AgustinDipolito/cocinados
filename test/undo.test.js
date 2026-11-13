@@ -7,7 +7,9 @@ import { STEP, KINDS, UNDO, LOT } from '../src/data.js';
 const run = (s, seconds) => { for (let i = 0; i < Math.round(seconds / STEP) && !s.over; i++) sim.step(s, STEP); return s; };
 const snap = (s, x, y) => { const c = sim.at(s, x, y); return c && [c.kind, c.dir, c.up, c.pick]; };
 
-function career() { const s = sim.newGame('career', 1); s.money = 1000; return s; }
+// Carrera con plata y sin el tope de piezas (LIMITS): estas pruebas miran el deshacer. El nivel alto apuraría a los
+// clientes, así que no llega nadie más (autoClock).
+function career() { const s = sim.newGame('career', 1); s.money = 1000; s.level = 99; s.autoClock = -1e9; return s; }
 
 test('deshacer: pieza nueva, reemplazo, borrado y mejora dejan plata y celda como estaban (Carrera, desafío y libre)', () => {
   const puzzle = sim.newGame('puzzle', 1, 'pzBudget');

@@ -168,7 +168,9 @@ function hover(cell) {
   const cur = cell && sim.at(game, cell.x, cell.y), dir = KINDS[ui.tool]?.noTurn ? 0 : ui.dir; // el puente no gira
   const same = cur?.kind === ui.tool && cur.dir === dir; // ya está puesta así: el fantasma sólo la taparía
   const kind = BUILD_ORDER.includes(ui.tool) && !same && sim.valid(game, cell?.x, cell?.y) && !cur?.fixed ? ui.tool : null;
-  scene.setHover(cell, kind, dir, !cell || !kind || game.mode === 'sandbox' || game.money >= netPrice(cell, kind));
+  // al tope: en rojo como sin plata, salvo que la celda ya tenga esa pieza (girarla no suma una)
+  const full = kind && cur?.kind !== kind && sim.countOf(game, kind) >= sim.limitOf(game, kind);
+  scene.setHover(cell, kind, dir, !cell || !kind || (!full && (game.mode === 'sandbox' || game.money >= netPrice(cell, kind))));
 }
 
 function applyTool(cell, dir = ui.dir) {
@@ -177,6 +179,10 @@ function applyTool(cell, dir = ui.dir) {
   if (ui.tool === 'erase') return sim.erase(game, cell.x, cell.y);
   const r = sim.place(game, cell.x, cell.y, ui.tool, dir);
   if (r.reason === 'money') noMoney(netPrice(cell, ui.tool));
+  else if (r.reason === 'limit') {
+    const n = sim.limitOf(game, ui.tool), level = sim.nextLimit(game, ui.tool);
+    hud.toast(level == null ? t('toastLimitLast', { n }) : t('toastLimit', { n, level }));
+  }
 }
 
 // ---------- mouse y dedos ----------
@@ -293,6 +299,9 @@ function levelToast(ev) {
     const missing = INGREDIENTS.find(i => RECIPES[k][i] && !game.cells.some(c => c?.kind === SOURCE_OF[i]));
     if (missing) text += ' ' + t('toastNeedsSource', { source: t('kindLong_' + SOURCE_OF[missing]).toLowerCase() });
   }
+  // las piezas cuyo tope subió, en una sola oración corta (un guardado viejo no trae `more`)
+  const more = ev.more ?? [];
+  if (more.length) text += ' ' + t('toastMore', { kinds: more.map(k => t('kind_' + k).toLowerCase()).join(', ') }); // el nombre corto de la barra: el largo no entra en el aviso
   hud.toast(text);
 }
 
