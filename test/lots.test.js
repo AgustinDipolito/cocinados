@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as sim from '../src/sim.js';
-import { STEP, RECIPES, START_MONEY, LOTS, CAREER_LOTS, LOT } from '../src/data.js';
+import { STEP, RECIPES, START_MONEY, LOTS, CAREER_LOTS, LOT, LOTGEN } from '../src/data.js';
 
 const run = (s, seconds) => { for (let i = 0; i < Math.round(seconds / STEP) && !s.over; i++) sim.step(s, STEP); return s; };
 const floor = s => s.cells.map(c => c !== false);
@@ -11,7 +11,7 @@ for (const key of CAREER_LOTS) {
   test(`local ${key}: la cocina inicial entrega a tiempo el primer pedido y lo cobra`, () => {
     const s = sim.newGame('career', 1, key);
     assert.equal(s.lot, key);
-    assert.deepEqual([s.W, s.H], [LOTS[key].w, LOTS[key].h]);
+    assert.deepEqual([s.W, s.H], [sim.lotOf(key, 1).w, sim.lotOf(key, 1).h]);
     while (!s.stats.onTime && s.time < 60 && !s.over) sim.step(s, STEP);
     assert.ok(s.stats.onTime === 1 && s.time < RECIPES.classic.deadline, `tardó ${s.time.toFixed(1)} s`);
     assert.equal(s.money, START_MONEY + RECIPES.classic.price);
@@ -69,10 +69,10 @@ test('una máquina fija no se borra, ni se reemplaza, ni se gira, pero se inspec
 
 test('ampliar suma lo que dice cada local', () => {
   for (const key of CAREER_LOTS) {
-    const s = sim.newGame('career', 1, key), [gw, gh] = LOTS[key].grow ?? [LOT.growW, LOT.growH];
+    const L = sim.lotOf(key, 1), s = sim.newGame('career', 1, key), [gw, gh] = L.grow ?? [LOT.growW, LOT.growH];
     s.money = 1e6;
     sim.expand(s);
-    assert.deepEqual([s.W, s.H], [LOTS[key].w + gw, LOTS[key].h + gh], key);
+    assert.deepEqual([s.W, s.H], [L.w + gw, L.h + gh], key);
   }
 });
 
@@ -83,5 +83,74 @@ test('cada local se abre llegando al nivel 4 en el anterior; El clásico está s
   assert.ok(!sim.lotOpen('hall', best({ classic: { level: 3 } })));
   assert.ok(sim.lotOpen('hall', best({ classic: { level: 4 } })));
   assert.ok(!sim.lotOpen('corner', best({ classic: { level: 9 } })));
-  CAREER_LOTS.slice(1).forEach((k, i) => assert.equal(LOTS[k].unlock[0], CAREER_LOTS[i], `${k} se abre con el anterior`));
+  const chain = CAREER_LOTS.filter(k => !LOTS[k].gen); // los locales de forma fija se abren en cadena
+  chain.slice(1).forEach((k, i) => assert.equal(LOTS[k].unlock[0], chain[i], `${k} se abre con el anterior`));
+  assert.ok(sim.lotOpen('random', best({})), 'La sorpresa está siempre abierta: su enlace se comparte con quien nunca jugó');
+});
+
+// ---------- La sorpresa: sala generada con semilla ----------
+
+const cellsOf = list => list.flatMap(([, x, y, , x2 = x, y2 = y]) => { const out = []; for (let j = y; j <= y2; j++) for (let i = x; i <= x2; i++) out.push([i, j]); return out; });
+const inRange = (v, [a, b]) => v >= a && v <= b;
+const shapeOf = L => (!L.holes.length ? 'none' : L.holes[0][0] === 0 && L.holes[0][1] === 0 ? 'corner' : L.holes[0][1] === 0 ? 'top' : 'left');
+const flipped = L => L.kitchen.find(k => k[0] === 'raw')[2] > L.kitchen.find(k => k[0] === 'bun')[2];
+
+test('sala generada: para 300 semillas, tamaño en rango, cocina sobre piso, agujeros arriba o a la izquierda, columnas lejos de la cocina', () => {
+  const signs = new Set(), shapes = new Set(), flips = new Set();
+  for (let seed = 1; seed <= 300; seed++) {
+    const L = sim.lotOf('random', seed), s = sim.newGame('career', seed, 'random'), why = `semilla ${seed}`;
+    assert.ok(inRange(L.w, LOTGEN.w) && inRange(L.h, LOTGEN.h), why);
+    assert.deepEqual([s.W, s.H, s.lotSeed], [L.w, L.h, seed], why);
+    const kitchen = cellsOf(L.kitchen);
+    for (const [x, y] of kitchen) assert.ok(sim.valid(s, x, y) && sim.at(s, x, y), `${why}: la cocina pisa ${x},${y}`);
+    for (const [x0, y0, x1, y1] of L.holes) {
+      assert.ok(x0 === 0 || y0 === 0, `${why}: agujero lejos del borde de arriba o del izquierdo`);
+      assert.ok(inRange(x1 - x0 + 1, [2, 4]) && inRange(y1 - y0 + 1, [1, 3]), why);
+    }
+    assert.ok(inRange(L.pillars.length, LOTGEN.pillars), `${why}: ${L.pillars.length} columnas`);
+    for (const [px, py] of L.pillars) {
+      assert.equal(sim.valid(s, px, py), false, why);
+      assert.ok(!kitchen.some(([x, y]) => Math.abs(x - px) <= 1 && Math.abs(y - py) <= 1), `${why}: columna ${px},${py} toca la cocina`);
+    }
+    const asm = L.kitchen.find(k => k[0] === 'assembly');
+    assert.ok(sim.valid(s, asm[1], asm[2] + (flipped(L) ? -1 : 1)), `${why}: la armadora sin costado libre para el queso`);
+    signs.add(JSON.stringify([L.w, L.h, L.holes, L.pillars]));
+    shapes.add(shapeOf(L));
+    flips.add(flipped(L));
+  }
+  assert.ok(signs.size >= 100, `sólo ${signs.size} salas distintas`);
+  assert.deepEqual([...shapes].sort(), ['corner', 'left', 'none', 'top']);
+  assert.equal(flips.size, 2, 'la cocina sale siempre con la misma orientación');
+});
+
+test('sala generada: la cocina inicial entrega a tiempo el primer pedido y lo cobra, en las 300 semillas', () => {
+  for (let seed = 1; seed <= 300; seed++) {
+    const s = sim.newGame('career', seed, 'random');
+    while (!s.stats.onTime && s.time < 60 && !s.over) sim.step(s, STEP);
+    assert.ok(s.stats.onTime === 1 && s.time < RECIPES.classic.deadline, `semilla ${seed}: tardó ${s.time.toFixed(1)} s`);
+    assert.equal(s.money, START_MONEY + RECIPES.classic.price, `semilla ${seed}`);
+  }
+});
+
+test('sala generada: la misma semilla da la misma sala y la misma partida; otra semilla, otra sala', () => {
+  const a = JSON.stringify(sim.lotOf('random', 42));
+  sim.lotOf('random', 43);
+  assert.equal(JSON.stringify(sim.lotOf('random', 42)), a, 'el caché no cambia la sala');
+  assert.equal(sim.serialize(run(sim.newGame('career', 42, 'random'), 90)), sim.serialize(run(sim.newGame('career', 42, 'random'), 90)));
+  assert.notEqual(JSON.stringify(sim.lotOf('random', 43)), a);
+  assert.equal(sim.newGame('career', 42, 'classic').lotSeed, null, 'un local común no guarda semilla');
+});
+
+test('sala generada: ampliar conserva lo que no es piso, y guardar y volver conserva la semilla y la forma', () => {
+  let seed = 1;
+  while (!sim.lotOf('random', seed).holes.length) seed++;
+  const s = sim.newGame('career', seed, 'random');
+  s.money = 1e6;
+  const before = floor(s), W0 = s.W;
+  assert.deepEqual(sim.expand(s), { ok: true });
+  for (let i = 0; i < before.length; i++) assert.equal(sim.valid(s, i % W0, Math.floor(i / W0)), before[i]);
+  sim.lotOf('random', seed + 1); // otra sala en el caché
+  const back = sim.deserialize(sim.serialize(s));
+  assert.deepEqual([back.lot, back.lotSeed], ['random', seed]);
+  assert.deepEqual(floor(back), floor(s));
 });

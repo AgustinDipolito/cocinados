@@ -1,6 +1,6 @@
 // El HUD es HTML encima del lienzo 3D. Lee el estado y avisa los toques con actions.*; no toca la simulación.
-import { BUILD_ORDER, RECIPES, KINDS, CAP, UPGRADES, QUEUE_MAX, HEARTS, LOTS, PUZZLES, deliveriesFor } from './data.js';
-import { at, cost, refund, upgradeCost, burners, stockCap, assembleTime, expandCost, canExpand, lotGrow, sourceNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck, puzzleStars } from './sim.js';
+import { BUILD_ORDER, RECIPES, KINDS, CAP, UPGRADES, QUEUE_MAX, HEARTS, PUZZLES, deliveriesFor } from './data.js';
+import { at, cost, refund, upgradeCost, burners, stockCap, assembleTime, expandCost, canExpand, lotGrow, sourceNeed, availableRecipes, isStuck, delivered, lost, diagShares, bottleneck, puzzleStars, lotOf, canUndo } from './sim.js';
 import { t, LANGS, getLang } from './i18n.js';
 import { orderRisk } from './crowd.js';
 
@@ -22,6 +22,8 @@ const ICON = {
   arrow: svg('M4 10.500h10V6l7 6-7 6v-4.500H4z'),
   upgrade: svg('M12 3l8 8h-5v9H9v-9H4z'),
   lock: svg('M8 10V7a4 4 0 118 0v3h2v11H6V10zm2 0h4V7a2 2 0 10-4 0z'),
+  view: svg('M12 4V1L8 5l4 4V6a6 6 0 015.3 8.8l1.46 1.46A8 8 0 0012 4zm0 14a6 6 0 01-5.3-8.8L5.24 7.74A8 8 0 0012 20v3l4-4-4-4z'), // girar la vista: dos flechas en círculo
+  undo: svg('M9 4L3 9.5 9 15v-4h6a3.5 3.5 0 010 7h-4v2.5h4a6 6 0 000-12H9z'), // flecha que vuelve
   jams: svg('M12 2l10 10-10 10L2 12zM9.4 8v8h1.8V8zM12.8 8v8h1.8V8z'), // la misma marca que la capa de atascos
 };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -53,14 +55,13 @@ export function createHud(root, actions, thumbs) {
       <div id="tickets"></div>
       <div id="orderAdd" class="panel"></div>
     </section>
-    <div id="center"><div id="status" class="chip" hidden></div><div id="toast" role="status" aria-live="polite"></div></div>
+    <div id="center"><div id="centerTop"><div id="status" class="chip" hidden></div><button id="undo" class="btn" data-act="undo" hidden></button></div><div id="toast" role="status" aria-live="polite"></div></div>
     <aside id="side">
       <section id="inspector" class="panel" hidden>
         <div class="panelHead"><h2 id="insTitle"></h2><button class="btn icon" data-act="closeInspector" id="insClose">${ICON.close}</button></div>
         <div id="insBody"></div>
         <div id="insActions"></div>
       </section>
-      <details id="log" class="panel"><summary id="logTitle"></summary><ol id="logList"></ol></details>
     </aside>
     <nav id="tools" class="panel" role="toolbar"></nav>
   </div>
@@ -92,7 +93,7 @@ export function createHud(root, actions, thumbs) {
   const stat = (label, value, cls = 'extra') => `<div class="stat ${cls}"><span>${label}</span><b>${value}</b></div>`;
 
   function renderTop(s, ui) {
-    const career = s.mode === 'career', P = PUZZLES[s.lot];
+    const career = s.mode === 'career', P = PUZZLES[s.lot], ex = expandInfo(s);
     let h = stat(t(career ? 'statMoney' : P ? 'statBudget' : 'statEarned'), money(s.money), 'main');
     if (P) h += stat(t('statTimeLeft'), clock(P.limit - s.time), 'main') + stat(t('statOrdersLeft'), P.orders.length - s.stats.onTime, 'main')
       + stat(t('statBelts'), t('ofMax', { n: puzzleStars(s).belts, max: P.belts }), 'main'); // la tercera estrella, a la vista
@@ -113,11 +114,22 @@ export function createHud(root, actions, thumbs) {
     set('controls',
       btn('togglePause', ui.playing ? ICON.pause : ICON.play, t(ui.playing ? 'actPause' : 'actResume'), ui.playing ? '' : 'primary')
       + `<button class="btn" data-act="cycleSpeed" title="${t('actSpeed')}" aria-label="${t('actSpeed')} ${ui.speed}×">${ICON.speed}<span>${ui.speed}×</span></button>`
+      + btn('rotateView', ICON.view, t('actView'))
       + `<button class="btn moreBtn" data-act="toggleMore" aria-expanded="${more}" title="${t('actMore')}" aria-label="${t('actMore')}">${ICON.more}</button>`
       + `<button class="btn extra ${ui.jams ? 'on' : ''}" data-act="toggleJams" aria-pressed="${ui.jams}" title="${t('jamsLabel')}" aria-label="${t('jamsLabel')}">${ICON.jams}<span class="lbl">${t('actJams')}</span></button>`
-      + btn('help', ICON.help, t('actHelp'), 'extra') + btn('askRestart', ICON.restart, t('actRestart'), 'extra') + btn('exit', ICON.exit, t('actExit'), 'extra'));
+      + btn('help', ICON.help, t('actHelp'), 'extra') + btn('askRestart', ICON.restart, t('actRestart'), 'extra') + btn('exit', ICON.exit, t('actExit'), 'extra')
+      // Ampliar, en teléfono parado: la grilla de 7 por 2 no tiene lugar para la herramienta 15 (la hoja de estilo elige cuál se ve)
+      + `<button class="btn extra expandTop ${ex.short ? 'short' : ''}" data-act="expand" ${ex.grow ? '' : 'disabled'} title="${ex.label} · ${ex.price}" aria-label="${ex.label} · ${ex.price}">${ICON.expand}<span class="lbl">${t('actExpand')}</span></button>`);
     $('status').hidden = ui.playing;
     set('status', t('statusPaused'));
+    $('undo').hidden = !canUndo(s); // contextual: sólo mientras lo último construido todavía se puede deshacer
+    set('undo', `${ICON.undo}<span>${t('actUndo')}</span>`);
+  }
+
+  /** Ampliar el terreno: si se puede, a qué medida, cuánto cuesta y si alcanza la plata. */
+  function expandInfo(s) {
+    const grow = canExpand(s), label = grow ? t('expandLabel', { w: s.W + lotGrow(s)[0], h: s.H + lotGrow(s)[1] }) : t('expandMax');
+    return { grow, label, price: grow ? (expandCost(s) ? money(expandCost(s)) : t('free')) : '—', short: grow && s.mode === 'career' && s.money < expandCost(s) };
   }
 
   function renderOrders(s) {
@@ -129,7 +141,7 @@ export function createHud(root, actions, thumbs) {
       const pct = Math.max(0, Math.min(100, left / total * 100));
       return `<article class="ticket panel ${risk}">
         ${img('recipe_' + o.recipeKey)}
-        <div><h3>#${o.id} ${t('recipe_' + o.recipeKey)}</h3>
+        <div><h3>#${o.id} ${t('recipe_' + o.recipeKey)}${o.group != null ? ` <span class="groupTag">${t('orderGroup')}</span>` : ''}</h3>
         <p>${t(r.cheese ? 'orderNeedsCheese' : 'orderNeeds', r)}</p>
         <p>${t({ pending: 'orderPending', assembling: 'orderAssembling', transit: 'orderTransit' }[o.status])}</p></div>
         <div class="ticketFoot"><span class="timer">${left < 0 ? '+' : ''}${clock(Math.abs(left))}</span><span>${money(r.price)}</span></div>
@@ -147,15 +159,21 @@ export function createHud(root, actions, thumbs) {
     const tool = (id, pic, name, price, title, off = false) =>
       `<button class="tool ${ui.tool === id ? 'active' : ''} ${off ? 'short' : ''}" data-act="setTool" data-arg="${id}" aria-pressed="${ui.tool === id}" title="${esc(title)}">
         ${pic}<span class="name">${name}</span>${price === null ? '' : `<span class="price">${price ? money(price) : t('free')}</span>`}</button>`;
-    let h = tool('inspect', ICON.inspect, t('toolInspect'), null, t('toolInspect'));
+    // El renglón de leyenda (sólo en compacta, donde los botones no llevan nombre): la herramienta elegida, su precio y
+    // hacia dónde va a apuntar en pantalla.
+    const sdir = (ui.dir + ui.rot) % 4, k = ui.tool, built = BUILD_ORDER.includes(k);
+    const name = built ? t('kind_' + k) : t(k === 'erase' ? 'toolErase' : 'toolInspect');
+    const cap = (built && !KINDS[k].noTurn && k !== 'dispatch' ? t('toolCapDir', { name, dir: t('dir' + sdir) }) : t('toolCap', { name }))
+      + (built ? ` · ${cost(s, k) ? money(cost(s, k)) : t('free')}` : '');
+    let h = `<span class="toolCap">${cap}</span>` + tool('inspect', ICON.inspect, t('toolInspect'), null, t('toolInspect'));
     for (const k of BUILD_ORDER) h += tool(k, img(k), t('kind_' + k), cost(s, k), `${t('kindLong_' + k)}. ${t('kindHint_' + k, { max: CAP.stock })}`, s.mode !== 'sandbox' && s.money < cost(s, k));
     h += tool('erase', ICON.erase, t('toolErase'), null, t('toolErase'));
     h += `<span class="sep"></span>
-      <button class="tool" data-act="rotate" title="${t('rotateLabel', { dir: t('dir' + ui.dir) })}" aria-label="${t('rotateLabel', { dir: t('dir' + ui.dir) })}">
-        <span class="dir" style="--turn:${ui.dir * 90}deg">${ICON.arrow}</span><span class="name">${t('actRotate')}</span><span class="price">R</span></button>`;
-    const grow = canExpand(s), label = grow ? t('expandLabel', { w: s.W + lotGrow(s)[0], h: s.H + lotGrow(s)[1] }) : t('expandMax');
-    h += `<button class="tool ${grow && s.mode === 'career' && s.money < expandCost(s) ? 'short' : ''}" data-act="expand" ${grow ? '' : 'disabled'} title="${label}" aria-label="${label}">
-        ${ICON.expand}<span class="name">${t('actExpand')}</span><span class="price">${grow ? (expandCost(s) ? money(expandCost(s)) : t('free')) : '—'}</span></button>`;
+      <button class="tool" data-act="rotate" title="${t('rotateLabel', { dir: t('dir' + sdir) })}" aria-label="${t('rotateLabel', { dir: t('dir' + sdir) })}">
+        <span class="dir" style="--turn:${sdir * 90}deg">${ICON.arrow}</span><span class="name">${t('actRotate')}</span><span class="price">R</span></button>`;
+    const ex = expandInfo(s);
+    h += `<button class="tool expandTool ${ex.short ? 'short' : ''}" data-act="expand" ${ex.grow ? '' : 'disabled'} title="${ex.label}" aria-label="${ex.label}">
+        ${ICON.expand}<span class="name">${t('actExpand')}</span><span class="price">${ex.price}</span></button>`;
     set('tools', h);
     $('tools').setAttribute('aria-label', t('toolbarLabel'));
   }
@@ -168,6 +186,7 @@ export function createHud(root, actions, thumbs) {
       const what = item => (item ? t('item_' + item.type) : t('laneEmpty'));
       if (c.kind === 'bridge') lines.push(t('insBridge', { h: what(c.item), v: what(c.item2) }));
       else lines.push(c.item ? t('insBeltItem', { item: t('item_' + c.item.type) }) : t('insBeltEmpty'));
+      if (c.kind === 'filter') lines.push(t('insFilter', { item: t('item_' + c.pick) }));
       for (const slot of ['item', 'item2']) if (isStuck(s, x, y, slot)) lines.push(`<strong class="bad">${t('insStuck', { item: t('item_' + c[slot].type) })}</strong>`);
     } else if (c.kind === 'grill') {
       lines.push(t('insGrill', { raw: c.rawCount, rawMax: CAP.grillRaw, cooked: c.cooked, cookedMax: CAP.grillCooked }));
@@ -201,12 +220,11 @@ export function createHud(root, actions, thumbs) {
       const short = price !== null && s.mode !== 'sandbox' && s.money < price; // se ve corto como las herramientas y dice cuánto falta
       const upBtn = price === null ? '' : `<button class="btn ${short ? 'short' : ''}" data-act="upgradeSelected">${ICON.upgrade}<span>${t('actUpgrade')}</span>
         <span class="price">${short ? t('upShort', { price, n: price - s.money }) : price ? money(price) : t('free')}</span></button>`;
-      set('insActions', c?.fixed ? upBtn : c ? `${upBtn}${KINDS[c.kind].noTurn ? '' : `<button class="btn" data-act="rotateSelected">${ICON.rotate}<span>${t('actRotate')}</span></button>`}
+      const pickBtn = c?.kind === 'filter' ? `<button class="btn" data-act="cyclePick">${ICON.rotate}<span>${t('actPick')}</span></button>` : '';
+      set('insActions', c?.fixed ? upBtn : c ? `${upBtn}${pickBtn}${KINDS[c.kind].noTurn ? '' : `<button class="btn" data-act="rotateSelected">${ICON.rotate}<span>${t('actRotate')}</span></button>`}
         <button class="btn" data-act="eraseSelected">${ICON.erase}<span>${back ? t('actEraseRefund', { n: back }) : t('actErase')}</span></button>` : '');
       $('insClose').setAttribute('aria-label', t('actClose'));
     }
-    set('logTitle', t('logTitle'));
-    set('logList', s.log.map(l => `<li><time>${clock(l.time)}</time> ${t(l.key, l.p && { ...l.p, recipe: l.p.recipe && t('recipe_' + l.p.recipe) })}</li>`).join(''));
   }
 
   function update(s, ui) { renderTop(s, ui); renderOrders(s); renderTools(s, ui); renderSide(s, ui); }
@@ -242,13 +260,16 @@ export function createHud(root, actions, thumbs) {
    * locales de Carrera en orden, con su récord (o null); lot = el elegido para una partida nueva.
    * puzzles = [{ key, open, stars }] de los desafíos en orden, con sus mejores estrellas.
    */
-  function showStart(saves, lots, lot, puzzles) {
-    const pick = lots.find(l => l.key === lot), lotName = k => t('lot_' + k);
-    const lotInfo = pick.open ? (pick.best ? t('bestRecord', pick.best) : t('lotNoBest'))
-      : t('lotLocked', { level: LOTS[lot].unlock[1], lot: lotName(LOTS[lot].unlock[0]) });
+  function showStart(saves, lots, lot, puzzles, seed, dare = null) {
+    const pick = lots.find(l => l.key === lot), lotName = k => t('lot_' + k), L = k => lotOf(k, seed);
+    const gen = pick.open && L(lot).gen; // La sorpresa abierta: el número de sala y la marca a batir van en el mismo párrafo (el arnés cuenta bloques de prosa)
+    const lotInfo = (pick.open ? (pick.best ? t('bestRecord', pick.best) : t('lotNoBest'))
+      : t('lotLocked', { level: L(lot).unlock[1], lot: lotName(L(lot).unlock[0]) })) + (gen ? ' ' + t('lotSeedInfo', { seed }) : '')
+      + (gen && dare ? ' ' + t('lotDare', { level: dare }) : '');
     const picker = `<div class="lots" role="group" aria-label="${t('lotsLabel')}">${lots.map(l => `<button class="btn lotBtn ${l.key === lot ? 'on' : ''}" data-act="pickLot" data-arg="${l.key}" aria-pressed="${l.key === lot}"
-      aria-label="${l.open ? lotName(l.key) : t('lotClosedLabel', { lot: lotName(l.key) })}">${plan(LOTS[l.key])}<span>${lotName(l.key)}</span>${l.open ? '' : ICON.lock}</button>`).join('')}</div>
-      <p class="saved">${lotInfo}</p>`;
+      aria-label="${l.open ? lotName(l.key) : t('lotClosedLabel', { lot: lotName(l.key) })}">${plan(L(l.key))}<span>${lotName(l.key)}</span>${l.open ? '' : ICON.lock}</button>`).join('')}</div>
+      <p class="saved">${lotInfo}</p>${gen ? `<div class="row"><button class="btn" data-act="rerollLot">${t('rerollLot')}</button>
+      <button class="btn" data-act="copyLotLink">${t('copyLotLink')}</button></div>` : ''}`;
     const mode = (m, name, hint, saved, extra = '') => `<section class="mode">
       <h2>${img(m === 'career' ? 'recipe_double' : 'assembly', 'thumb')}${name}</h2><p>${hint}</p>
       ${saves[m] ? `<p class="saved">${saved}</p>` : ''}${extra}
@@ -281,13 +302,16 @@ export function createHud(root, actions, thumbs) {
     open('dlgConfirm');
   }
 
-  function showOver(s, isBest) {
-    const b = bottleneck(s); // las dos oraciones del diagnóstico van en un solo párrafo: la hoja suma un bloque de prosa, no dos
+  /** dare: el nivel a batir que trajo el enlace de esta sala, o null. En La sorpresa se ofrece copiar el enlace con la marca. */
+  function showOver(s, isBest, dare = null) {
+    const b = bottleneck(s); // las oraciones del diagnóstico van en un solo párrafo: la hoja suma un bloque de prosa, no dos
     const why = (b ? t('overBottleneck', { machine: t('kindLong_' + b.kind), pct: pct(b.shares.work) }) : t('overNoBottleneck'))
       + ' ' + t('overLost', { expired: s.stats.expired, turned: s.stats.turnedAway });
+    // la marca del enlace se pasa con un nivel mayor; va en el párrafo de la cuenta final, sin sumar bloques de prosa
+    const vs = dare ? ' ' + (s.level > dare ? t('dareWon', { level: s.level, target: dare }) : t('dareLost', { target: dare })) : '';
     $('dlgOver').innerHTML = `<h1>${t('overTitle')}</h1>
-      <p>${t('overBody', { level: s.level, delivered: delivered(s), earned: s.stats.earned })}</p><p id="overWhy">${why}</p>${isBest ? `<p class="saved">${t('overBest')}</p>` : ''}
-      <div class="row end"><button class="btn" data-act="exit">${t('actExit')}</button><button class="btn primary" data-act="startNew" data-arg="career">${t('actPlayAgain')}</button></div>`;
+      <p>${t('overBody', { level: s.level, delivered: delivered(s), earned: s.stats.earned })}${vs}</p><p id="overWhy">${why}</p>${isBest ? `<p class="saved">${t('overBest')}</p>` : ''}
+      <div class="row end">${s.lot === 'random' ? `<button class="btn" data-act="copyDareLink">${t('copyDareLink')}</button>` : ''}<button class="btn" data-act="exit">${t('actExit')}</button><button class="btn primary" data-act="startNew" data-arg="career">${t('actPlayAgain')}</button></div>`;
     open('dlgOver');
   }
 

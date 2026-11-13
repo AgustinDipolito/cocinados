@@ -44,7 +44,7 @@ function measure(maxSizes, touch) {
     return { left, top, right, bottom };
   };
   // 1. paneles: ninguno pisa a otro ni se sale de la ventana
-  const zones = [...document.querySelectorAll('#top, #orders, #inspector, #log, #tools, #toast.show, #status')].filter(visible);
+  const zones = [...document.querySelectorAll('#top, #orders, #inspector, #tools, #toast.show, #status, #undo')].filter(visible);
   const rects = zones.map(z => [z.id, painted(z)]);
   for (const [id, r] of rects) if (r.left < -1 || r.top < -1 || r.right > innerWidth + 1 || r.bottom > innerHeight + 1) out.problems.push(`${id} se sale de la ventana`);
   for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
@@ -185,10 +185,22 @@ await pool(runs, async ([lang, vp]) => {
   check(where, 'miniaturas', await page.evaluate(() => { // cada herramienta y cada receta con su propio dibujo
     const srcs = [...document.querySelectorAll('#tools img, #orderAdd img, .ticket img')].map(i => i.src);
     const tools = [...document.querySelectorAll('#tools img')].map(i => i.src);
-    return tools.length === 10 && new Set(tools).size === 10 && !tools.includes(document.querySelector('.ticket img').src) && srcs.every(s => s.length > 2000);
+    return tools.length === 11 && new Set(tools).size === 11 && !tools.includes(document.querySelector('.ticket img').src) && srcs.every(s => s.length > 2000);
   }), 'dos herramientas comparten miniatura, o una usa la de una receta');
-  check(where, 'estado por omisión', first.tools === 14 && first.orders === 1 && first.money === 100, JSON.stringify(first));
+  check(where, 'estado por omisión', first.tools === 15 && first.orders === 1 && first.money === 100, JSON.stringify(first));
   await checkQueue('fila al abrir'); // el primer cliente espera unos 25 s: la fila no cambia mientras se mide
+  if (touch) check(where, 'barra del teléfono', await page.evaluate(want => { // enteras, sin desplazar: 14 en parado (Ampliar va arriba), 15 apaisado
+    const bar = document.getElementById('tools'), tools = [...bar.querySelectorAll('.tool')].filter(el => el.getBoundingClientRect().width > 0);
+    return bar.scrollWidth <= bar.clientWidth + 1 && bar.scrollHeight <= bar.clientHeight + 1 && tools.length === want
+      && tools.every(el => { const r = el.getBoundingClientRect(); return r.left >= -1 && r.top >= -1 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1; });
+  }, vp === 'phone' ? 14 : 15), 'la barra de herramientas se desplaza, deja herramientas fuera de la ventana o no tiene las que tocan');
+  if (vp === 'phone') { // en parado, Ampliar está en la barra de arriba, dentro de «más»
+    await click('[data-act=toggleMore]');
+    await until('barra de arriba desplegada', () => document.querySelector('#top.more'));
+    check(where, 'ampliar arriba', await page.evaluate(() => { const r = document.querySelector('#top [data-act=expand]').getBoundingClientRect(); return r.width >= 44 && r.height >= 44; }), 'Ampliar no está en la barra de arriba desplegada');
+    await click('[data-act=toggleMore]');
+    await until('barra de arriba plegada', () => !document.querySelector('#top.more'));
+  }
 
   if (touch) { // un dedo queda apoyado mientras se abre una hoja; después, un toque tiene que seguir eligiendo
     const a = await page.evaluate(() => window.__bb.scene.project(1, 5, 0));
@@ -211,6 +223,32 @@ await pool(runs, async ([lang, vp]) => {
     await click('[data-act=closeInspector]');
   }
 
+  // Girar la vista con el botón: un cuarto, y una celda a la vista se elige igual con la vista girada. Después se vuelve
+  // con Q a la vista de siempre, que es la que supone todo el resto del recorrido.
+  const viewStill = (label, rot) => until(label, r => { // quieta: dos lecturas seguidas, un cuadro aparte, coinciden
+    const { ui, scene } = window.__bb, p = scene.project(0, 0), k = p.x.toFixed(1) + ',' + p.y.toFixed(1);
+    const same = window.__lastView === k; window.__lastView = k;
+    return ui.rot === r && scene.viewTurn() === r && same;
+  }, rot);
+  await page.evaluate(() => { window.__lastView = null; });
+  await click('[data-act=rotateView]');
+  await viewStill('vista girada y quieta', 1);
+  check(where, 'vista girada', await page.evaluate(() => {
+    const { game, sim, scene } = window.__bb;
+    for (let y = 0; y < game.H; y++) for (let x = 0; x < game.W; x++) {
+      if (!sim.valid(game, x, y)) continue;
+      const p = scene.project(x, y);
+      if (document.elementFromPoint(p.x, p.y)?.id !== 'scene') continue; // tapada por un panel o fuera de la ventana
+      const c = scene.pick(game, p.x, p.y);
+      return c?.x === x && c?.y === y;
+    }
+    return false; // ninguna celda a la vista: el control no miró nada
+  }), 'con la vista girada, la celda proyectada no es la que se elige');
+  await shot('3b-vista-girada');
+  await page.evaluate(() => { window.__lastView = null; });
+  await page.keyboard.press('q');
+  await viewStill('vista de siempre otra vez', 0);
+
   // Se juega: pasa el tiempo y se inspecciona una máquina con un clic de verdad.
   await page.evaluate(() => window.__bb.advance(47));
   await until('primera entrega en pantalla', () => window.__bb.game.stats.onTime > 0 && document.querySelector('#stats').textContent.includes('$' + window.__bb.game.money));
@@ -221,9 +259,7 @@ await pool(runs, async ([lang, vp]) => {
     const p = window.__bb.scene.project(3, 1, 0.3);
     return document.elementFromPoint(p.x, p.y)?.id === 'scene';
   }), 'el inspector tapa la celda que se inspecciona');
-  await click('#log summary');
   await shot('4-carrera-jugando');
-  await click('#log summary');
 
   // Mejorar la parrilla desde el inspector, en pausa: sin plata el botón se ve corto, dice cuánto falta y no cobra;
   // con plata mejora, el inspector lo dice y el botón ya no está.
@@ -238,10 +274,16 @@ await pool(runs, async ([lang, vp]) => {
   check(where, 'mejorar sin dinero', await page.evaluate(() => { const { game, sim } = window.__bb; return game.money === 100 && !sim.at(game, 3, 1).up; }), 'cobró o mejoró sin plata');
   await page.evaluate(() => { window.__bb.game.money = 300; });
   await until('Mejorar con plata', () => document.querySelector('[data-act=upgradeSelected]:not(.short)'));
+  await frames();
+  // La marca dorada dibuja lo que dice el motor (puede ser ninguna si la parrilla todavía no llega a no dar abasto).
+  const hintMatch = () => page.evaluate(() => { const { game, sim, scene } = window.__bb, a = sim.upgradeHint(game), b = scene.shownHint();
+    return a ? b?.x === a.x && b?.y === a.y : b === null; });
+  check(where, 'marca de mejora', await hintMatch(), 'la marca dorada no coincide con upgradeHint');
   await click('[data-act=upgradeSelected]');
   await until('parrilla mejorada, cobrada y sin botón', () => { const { game, sim } = window.__bb;
     return sim.at(game, 3, 1).up && game.money === 160 && !document.querySelector('[data-act=upgradeSelected]') && !document.querySelector('#inspector').hidden; });
   await frames();
+  check(where, 'marca de mejora', await hintMatch() && await page.evaluate(() => { const h = window.__bb.scene.shownHint(); return !(h?.x === 3 && h?.y === 1); }), 'la marca sigue sobre la parrilla mejorada');
   await shot('4c-mejorada');
   await click('[data-act=closeInspector]');
   await click('[data-act=togglePause]');
@@ -250,11 +292,26 @@ await pool(runs, async ([lang, vp]) => {
   await click('[data-act=togglePause]');
   await until('cartel de pausa', () => !document.querySelector('#status').hidden);
   const before = await page.evaluate(() => window.__bb.game.money);
-  await click('[data-act=setTool][data-arg=cheese]');
+  const buildCheese = async () => {
+    await click('[data-act=setTool][data-arg=cheese]');
+    await clickCell(7, 5);
+    await until('queso puesto', () => { const { sim, game } = window.__bb; return sim.at(game, 7, 5)?.kind === 'cheese'; });
+    const mid = await page.evaluate(() => window.__bb.game.money); // la plata entre los dos gestos
+    await click('[data-act=setTool][data-arg=belt]');
+    await clickCell(7, 4);
+    return mid;
+  };
   for (let i = 0; i < 3; i++) await page.keyboard.press('r'); // la salida, hacia arriba
-  await clickCell(7, 5);
-  await click('[data-act=setTool][data-arg=belt]');
-  await clickCell(7, 4);
+  const afterCheese = await buildCheese();
+  // Deshacer con clics, en pausa: el botón aparece; un clic saca la cinta y devuelve su plata, otro saca el queso.
+  await until('cinta puesta y Deshacer a la vista', () => { const { sim, game } = window.__bb, r = document.querySelector('#undo').getBoundingClientRect();
+    return sim.at(game, 7, 4)?.kind === 'belt' && r.width > 0 && r.height > 0; });
+  await shot('5a-deshacer-a-la-vista');
+  await click('#undo');
+  await until('cinta deshecha', m => { const { sim, game } = window.__bb; return !sim.at(game, 7, 4) && sim.at(game, 7, 5)?.kind === 'cheese' && game.money === m; }, afterCheese);
+  await click('#undo');
+  await until('queso deshecho', m => { const { sim, game } = window.__bb; return !sim.at(game, 7, 5) && game.money === m; }, before);
+  await buildCheese(); // se vuelve a construir lo mismo, así el resto del recorrido sigue igual
   await until('queso construido y cobrado', m => { const { sim, game } = window.__bb; return sim.at(game, 7, 5)?.kind === 'cheese' && sim.at(game, 7, 4)?.dir === 3 && game.money === m - 27; }, before);
   await click('[data-act=togglePause]');
   await page.evaluate(() => window.__bb.advance(90));
@@ -308,16 +365,30 @@ await pool(runs, async ([lang, vp]) => {
   check(where, 'local cerrado', await page.evaluate(() => document.querySelector('[data-act=startNew][data-arg=career]').disabled), 'deja empezar un local cerrado');
   await shot('6b-local-cerrado');
   await page.evaluate(() => { for (const k of ['best', 'best.hall', 'best.corner', 'best.columns']) localStorage.setItem('bb.' + k, JSON.stringify({ level: 4, earned: 400 })); });
-  for (const lot of ['hall', 'corner', 'columns', 'island']) {
+  let seed = null; // La sorpresa: la semilla que muestra el inicio
+  for (const lot of ['hall', 'corner', 'columns', 'island', 'random']) {
     await click(`[data-act=pickLot][data-arg=${lot}]`);
     await until('local abierto elegido', l => document.querySelector(`[data-arg=${l}][aria-pressed=true]`) && !document.querySelector('[data-act=startNew][data-arg=career]').disabled, lot);
     if (lot === 'hall') await shot('6c-locales');
+    if (lot === 'random') { // la sala va en la URL y en el párrafo del local; «Otra sala» cambia semilla y plano
+      const room = () => page.evaluate(() => ({ hash: location.hash, seed: window.__bb.ui.lotSeed,
+        plan: document.querySelector('[data-act=pickLot][data-arg=random] .plan').innerHTML,
+        info: document.querySelector('[data-act=rerollLot]')?.parentElement.previousElementSibling.textContent ?? '' }));
+      const a = await room();
+      check(where, 'la sorpresa', a.hash === '#sala=' + a.seed && a.info.includes(String(a.seed)), JSON.stringify({ hash: a.hash, seed: a.seed }));
+      await click('[data-act=rerollLot]');
+      await until('otra sala', s0 => window.__bb.ui.lotSeed !== s0 && location.hash === '#sala=' + window.__bb.ui.lotSeed, a.seed);
+      const b = await room();
+      check(where, 'la sorpresa', b.plan !== a.plan && b.info.includes(String(b.seed)), 'otra sala no cambió el plano o el número');
+      seed = b.seed;
+    }
     await click('[data-act=startNew][data-arg=career]');
     if (await page.evaluate(() => !!document.querySelector('#dlgConfirm[open]'))) await click('[data-act=confirmOk]');
     await noDialog();
     await page.evaluate(() => window.__bb.advance(45));
     await click('[data-act=togglePause]');
     await until('primera entrega del local, en pausa', l => window.__bb.game.lot === l && window.__bb.game.stats.onTime > 0 && !document.querySelector('#status').hidden, lot);
+    if (lot === 'random') check(where, 'la sorpresa', await page.evaluate(n => window.__bb.game.lotSeed === n, seed), 'la partida no usa la semilla mostrada');
     if (lot === 'corner') { // tocar donde no hay piso no elige nada
       await clickCell(2, 2);
       await frames();
@@ -367,6 +438,18 @@ await pool(runs, async ([lang, vp]) => {
   await until('inspector del puente', () => window.__bb.ui.selected?.x === 13 && !document.querySelector('#inspector').hidden);
   await shot('7b-divisor-y-puente');
   await click('[data-act=closeInspector]');
+  // Filtro con clics: se pone, se inspecciona y «Cambiar ingrediente» pasa al siguiente.
+  await click('[data-act=setTool][data-arg=filter]');
+  await clickCell(13, 7);
+  await until('filtro puesto', () => { const { sim, game } = window.__bb; return sim.at(game, 13, 7)?.kind === 'filter'; });
+  await click('[data-act=setTool][data-arg=inspect]');
+  await clickCell(13, 7);
+  await until('inspector del filtro', () => window.__bb.ui.selected?.x === 13 && document.querySelector('[data-act=cyclePick]'));
+  const pick0 = await page.evaluate(() => { const { sim, game } = window.__bb; return sim.at(game, 13, 7).pick; });
+  await click('[data-act=cyclePick]');
+  await until('el filtro eligió otro ingrediente', p => { const { sim, game } = window.__bb, c = sim.at(game, 13, 7); return c.pick && c.pick !== p; }, pick0);
+  await shot('7c-filtro');
+  await click('[data-act=closeInspector]');
   await click('[data-act=togglePause]');
 
   await click('[data-act=askRestart]');
@@ -404,8 +487,13 @@ await pool(runs, async ([lang, vp]) => {
   // Lo guardado vuelve: se sale, se recarga la página y se continúa.
   await click('#controls [data-act=exit]');
   await ready();
+  await page.evaluate(() => { location.hash = '#sala=4242&nivel=6'; }); // un enlace compartido con su marca: al abrir elige esa sala
   await page.reload();
   await ready();
+  check(where, 'enlace de sala', await page.evaluate(() => { const { ui } = window.__bb;
+    return ui.lot === 'random' && ui.lotSeed === 4242 && !!document.querySelector('[data-act=pickLot][data-arg=random][aria-pressed=true]'); }), 'abrir con #sala=4242 no elige esa sala');
+  check(where, 'marca a batir', await page.evaluate(() => { const { ui } = window.__bb, info = document.querySelector('[data-act=rerollLot]')?.parentElement.previousElementSibling.textContent ?? '';
+    return ui.dare?.seed === 4242 && ui.dare?.level === 6 && /\b6\b/.test(info) && location.hash === '#sala=4242&nivel=6'; }), 'el enlace con nivel no deja la marca, o el párrafo del local no la nombra');
   check(where, 'continuar', await page.evaluate(() => !!document.querySelector('[data-act=start][data-arg=sandbox]')), 'no ofrece continuar la partida guardada');
   await click('[data-act=start][data-arg=sandbox]');
   await noDialog();

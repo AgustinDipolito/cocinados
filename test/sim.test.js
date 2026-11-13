@@ -217,11 +217,11 @@ test('una hamburguesa que llega cuando el cliente ya se fue es desperdicio, y qu
   sim.erase(s, 10, 3);
   run(s, 70); // el pedido 1 venció y se fue; su hamburguesa sigue esperando en la cinta
   assert.ok(!s.orders.some(o => o.id === 1));
-  const waste = s.stats.waste;
+  const waste = s.stats.waste, seen = s.events.length;
   sim.place(s, 10, 3, 'dispatch', 0);
   run(s, 2);
   assert.ok(s.stats.waste > waste);
-  assert.ok(s.log.some(l => l.key === 'logOrphan' && l.p.id === 1));
+  assert.ok(s.events.slice(seen).some(e => e.type === 'waste' && e.x === 10 && e.y === 3), 'el despacho anuncia el desperdicio');
 });
 
 test('invariante: el estado de cada pedido coincide con lo que hay en la cocina, aun construyendo y borrando al azar', () => {

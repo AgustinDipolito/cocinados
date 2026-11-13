@@ -1,28 +1,28 @@
 // Un control que nunca falló no probó nada: rompe el código a propósito, de a una cosa, y comprueba que
 // `npm test` se ponga rojo. Si el texto a romper ya no existe, avisa (la mutación quedó vieja).
-// Uso: node tools/mutate.mjs
+// Uso: node tools/mutate.mjs · con --check sólo verifica que cada texto aparece una vez, sin correr pruebas.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const MUTATIONS = [
   ['borrar devuelve todo en vez de la mitad', 'src/sim.js', 's.money += refund(s, cur);', 's.money += cost(s, cur.kind);'],
   ['construir no cobra', 'src/sim.js', '  s.money -= price;\n  put(s, x, y, kind, dir);', '  put(s, x, y, kind, dir);'],
-  ['se construye sin dinero', 'src/sim.js', "if (paid(s) && s.money < price) return { ok: false, reason: 'money' };\n  if (cur)", 'if (cur)'],
+  ['se construye sin dinero', 'src/sim.js', "if (paid(s) && s.money < price) return { ok: false, reason: 'money' };\n  note(s, x, y, cur,", 'note(s, x, y, cur,'],
   ['girar reconstruye la máquina', 'src/sim.js', '    cur.dir = dir;\n    return { ok: true };', '    put(s, x, y, kind, dir);\n    return { ok: true };'],
   ['el pedido no vuelve a la cola', 'src/sim.js', "if (o) o.status = 'pending';", 'if (o) o.status = o.status;'],
   ['ampliar desordena las celdas', 'src/sim.js', 'cells[y * W + x] = s.cells[y * s.W + x];', 'cells[y * s.W + x] = s.cells[y * s.W + x];'],
   ['recetas sin mirar el nivel', 'src/sim.js', 'return s.level >= r.level && INGREDIENTS.every', 'return INGREDIENTS.every'],
   ['recetas sin mirar las fuentes', 'src/sim.js', '&& INGREDIENTS.every(i => !r[i] || hasKind(s, SOURCE_OF[i]));', ';'],
   ['el cliente que se va no baja la reputación', 'src/sim.js', '  s.hearts--;\n  if (s.hearts <= 0)', '  if (s.hearts <= 0)'],
-  ['la cola llena no echa a nadie', 'src/sim.js', "else if (isCareer(s)) { log(s, 'logTurnedAway')", "else if (false) { log(s, 'logTurnedAway')"],
+  ['la cola llena no echa a nadie', 'src/sim.js', "else if (isCareer(s)) { emit(s, 'turnedAway');", "else if (false) { emit(s, 'turnedAway');"],
   ['la entrega tardía paga completo', 'src/sim.js', 'late ? Math.round(RECIPES[o.recipeKey].price * LATE_PAY) : ', ''],
   ['subir de nivel no pasa nunca', 'src/sim.js', 'delivered(s) >= deliveriesFor(s.level)) {', 'delivered(s) >= Infinity) {'],
   ['el azar no usa la semilla', 'src/sim.js', '  s.seed = (s.seed + 0x6D2B79F5) | 0;\n  let t = s.seed;', '  let t = (Math.random() * 2 ** 32) | 0;'],
   ['se acepta un guardado de otra versión', 'src/sim.js', 's.v === SAVE_VERSION && ', ''],
   ['la partida cerrada sigue avanzando', 'src/sim.js', 'export function step(s, dt) {\n  if (s.over) return;', 'export function step(s, dt) {'],
-  ['una cinta frenada por una máquina llena se marca sin salida', 'src/sim.js', 'return !exits(c, item.d).some(', 'return true || exits(c, item.d).some('],
-  ['el ingrediente suelto no cuenta como desperdicio', 'src/sim.js', "else { s.stats.waste++; log(s, 'logWaste');", "else { log(s, 'logWaste');"],
-  ['la hamburguesa sin cliente no se anota', 'src/sim.js', "log(s, 'logOrphan', { id }); ", ''],
+  ['una cinta frenada por una máquina llena se marca sin salida', 'src/sim.js', 'return !exits(c, item.d, item.type).some(', 'return true || exits(c, item.d, item.type).some('],
+  ['el ingrediente suelto no cuenta como desperdicio', 'src/sim.js', "else { s.stats.waste++; emit(s, 'waste', { x, y }); }", "else { emit(s, 'waste', { x, y }); }"],
+  ['la hamburguesa sin cliente no se anota', 'src/sim.js', "s.stats.waste++; emit(s, 'waste', { x, y }); return; }", 's.stats.waste++; return; }'],
   ['la armadora arranca otro trabajo con la salida ocupada', 'src/sim.js', 'if (!c.job && !c.output) {', 'if (!c.job) {'],
   ['los productos cruzan la cinta sin esperar', 'src/sim.js', 'if (!item || item.readyAt > s.time) return;', 'if (!item) return;'],
   ['guardar pierde la semilla', 'src/sim.js', 'JSON.stringify({ ...s, events: [] })', 'JSON.stringify({ ...s, events: [], seed: 1 })'],
@@ -46,15 +46,15 @@ const MUTATIONS = [
   ['la fila marca por vencer con otro umbral', 'src/crowd.js', 'left < total * 0.3', 'left < total * 0.5'],
   ['la fila marca el vencido como por vencer', 'src/crowd.js', "left < 0 ? 'late'", "left < 0 ? 'soon'"],
   ['la fila no sigue el orden de llegada', 'src/crowd.js', 'p.tx = c.headX - i * CROWD.gap;', 'p.tx = c.headX - (orders.length - 1 - i) * CROWD.gap;'],
-  ['el cliente nuevo aparece en su lugar sin caminar', 'src/crowd.js', 'x: c.enterX, z: c.z, heading', 'x: c.headX - i * CROWD.gap, z: c.z, heading'],
+  ['el cliente nuevo aparece en su lugar sin caminar', 'src/crowd.js', 'x: c.enterX - born++ * CROWD.gap, z: c.z, heading', 'x: c.headX - i * CROWD.gap, z: c.z, heading'],
   ['al continuar los clientes llegan caminando', 'src/crowd.js', 'place = still || crowd.fresh', 'place = still'],
   ['con movimiento reducido el que llega camina', 'src/crowd.js', 'still || crowd.fresh', 'crowd.fresh'],
-  ['el que cobra se va enojado', 'src/crowd.js', "mark: why === 'angry' ? 'angry' : null", "mark: 'angry'"],
-  ['el que se le venció se va por el lado de la caja', 'src/crowd.js', "tx: why === 'angry' ? c.enterX : c.leaveX", 'tx: c.leaveX'],
+  ['el que cobra se va enojado', 'src/crowd.js', 'else Object.assign(p, { queued: false, mark: null,', "else Object.assign(p, { queued: false, mark: 'angry',"],
+  ['el que se le venció se va por el lado de la caja', 'src/crowd.js', "mark: 'angry', tx: c.enterX, tz: c.lane, leaving: true });", "mark: 'angry', tx: c.leaveX, tz: c.lane, leaving: true });"],
   ['un pedido que se fue sin evento queda dibujado', 'src/crowd.js', 'if (!why || still) { P.delete(key); continue; }', 'if (still) { P.delete(key); continue; }'],
   ['el que encuentra la cola llena no aparece', 'src/crowd.js', "else if (e.type === 'turnedAway') turned++;", ''],
   ['el que mira la cola llena no se vuelve nunca', 'src/crowd.js', '(p.wait -= dt) <= 0', '(p.wait -= 0) < 0'],
-  ['falta una frase en inglés', 'src/i18n.js', "    logOrphan: 'The burger for order #{id} arrived after the customer had left.',\n", ''],
+  ['falta una frase en inglés', 'src/i18n.js', " lot_random: 'The Surprise',", ''],
   ['una traducción pierde su hueco', 'src/i18n.js', "toastNoMoney: 'Not enough money: ${n} short.'", "toastNoMoney: 'Not enough money.'"],
   ['el español tutea', 'src/i18n.js', 'Elegí una máquina de la barra y tocá una celda.', 'Puedes elegir una máquina de la barra.'],
   ['una frase que nadie usa', 'src/i18n.js', "    tagline: 'Fábrica de hamburguesas',", "    tagline: 'Fábrica de hamburguesas',\n    huerfana: 'x',"],
@@ -74,11 +74,11 @@ const MUTATIONS = [
   ['el puente mezcla los dos carriles', 'src/sim.js', "const slot = cell.kind === 'bridge' && d % 2 ? 'item2' : 'item';", "const slot = 'item';"],
   ['el puente gira', 'src/sim.js', '  if (KINDS[kind].noTurn) dir = 0;', ''],
   ['borrar el puente no devuelve el pedido del segundo carril', 'src/sim.js', 'c.item2?.orderId, c.output', 'c.output'],
-  ['lo varado en una cinta sin salida cuenta como lo que viaja', 'src/sim.js', 'else if (exits(c, item.d).some(d => arrives(s, x, y, d, item.type))) loose', 'else loose'],
+  ['lo varado en una cinta sin salida cuenta como lo que viaja', 'src/sim.js', 'else if (exits(c, item.d, item.type).some(d => arrives(s, x, y, d, item.type))) loose', 'else loose'],
   ['el puente trabado en su segundo carril no cuenta como trabado', 'src/sim.js', ' || (c.item2 && c.item2.readyAt <= s.time)', ''],
   // etapa 4: mejoras de máquina
   ['la mejora no cobra', 'src/sim.js', '  s.money -= price;\n  c.up = true;', '  c.up = true;'],
-  ['se mejora sin dinero', 'src/sim.js', "if (paid(s) && s.money < price) return { ok: false, reason: 'money' };\n  s.money -= price;\n  c.up", 's.money -= price;\n  c.up'],
+  ['se mejora sin dinero', 'src/sim.js', "if (paid(s) && s.money < price) return { ok: false, reason: 'money' };\n  if (!c.fixed)", 'if (!c.fixed)'],
   ['se mejora dos veces', 'src/sim.js', "  if (c.up) return { ok: false, reason: 'done' };\n", ''],
   ['se mejora cualquier máquina', 'src/sim.js', "  if (!UPGRADES[c.kind]) return { ok: false, reason: 'none' };\n", ''],
   ['en modo libre mejorar cobra', 'src/sim.js', '(paid(s) ? UPGRADES[kind].cost : 0)', 'UPGRADES[kind].cost'],
@@ -94,7 +94,7 @@ const MUTATIONS = [
   ['una máquina fija se borra', 'src/sim.js', 'if (!cur || cur.fixed || s.over) return false;', 'if (!cur || s.over) return false;'],
   ['las máquinas fijas del local no se marcan', 'src/sim.js', '  for (const [x, y] of lot.fixed ?? []) at(s, x, y).fixed = true;\n', ''],
   ['las columnas del local son piso', 'src/sim.js', '  rects(lot.pillars, (x, y) => { s.cells[y * s.W + x] = false; });\n', ''],
-  ['ampliar no mira el local', 'src/sim.js', 'LOTS[s.lot].grow ?? [LOT.growW, LOT.growH]', '[LOT.growW, LOT.growH]'],
+  ['ampliar no mira el local', 'src/sim.js', 'lotOf(s.lot, s.lotSeed).grow ?? [LOT.growW, LOT.growH]', '[LOT.growW, LOT.growH]'],
   // etapa 7: desafíos
   ['en un desafío borrar devuelve la mitad', 'src/sim.js', '(isPuzzle(s) ? PUZZLE_REFUND : REFUND)', 'REFUND'],
   ['las piezas dadas del desafío no vienen fijas', 'src/sim.js', 'for (const c of s.cells) if (c) c.fixed = true; ', ''],
@@ -110,11 +110,46 @@ const MUTATIONS = [
   ['perder da estrellas', 'src/sim.js', 'stars: won ? 1 + spendOk + beltsOk : 0', 'stars: 1 + spendOk + beltsOk'],
   ['un desafío se abre sin ganar el anterior', 'src/sim.js', 'stars(PUZZLE_ORDER[i - 1]) > 0', 'true'],
   ['el desafío del divisor se gana con una cinta', 'src/data.js', "orders: every(12, 2.5, 'classic')", "orders: every(6, 5, 'classic')"],
-  ['un local se abre sin llegar al nivel', 'src/sim.js', '>= LOTS[key].unlock[1]', '>= 0'],
+  ['un local se abre sin llegar al nivel', 'src/sim.js', '(best(u[0])?.level ?? 0) >= u[1]', '(best(u[0])?.level ?? 0) >= 0'],
+  // ronda de testers: indicador de mejora, sentido del puente, sala generada, bolsa del cliente
+  ['el indicador de mejora ignora la plata', 'src/sim.js', '|| c.up || s.money < upgradeCost(s, c.kind)) return null;', '|| c.up) return null;'],
+  ['el indicador de mejora señala una ya mejorada', 'src/sim.js', '|| !UPGRADES[c.kind] || c.up ||', '|| !UPGRADES[c.kind] ||'],
+  ['el sentido del puente no mira el producto que lleva', 'src/sim.js', '  if (item) return item.d;\n', ''],
+  ['la sala generada deja una columna tocando la cocina', 'src/sim.js', 'floor(x, y) && !near(x, y) &&', 'floor(x, y) &&'],
+  ['la sala generada no usa la semilla', 'src/sim.js', 'const r = { seed: (seed ^ 0x2545F491) | 0 };', 'const r = { seed: 0x2545F491 };'],
+  ['el que cobra no espera la bolsa', 'src/crowd.js', 'hold: CROWD.grab, grab:', 'hold: 0, grab:'],
+  ['el enojado sale con bolsa', 'src/crowd.js', "mark: 'angry', tx: c.enterX, tz: c.lane, leaving: true });", "mark: 'angry', tx: c.enterX, tz: c.lane, leaving: true, bag: true });"],
+  // segunda tanda: deshacer, filtro y grupos
+  ['deshacer devuelve la mitad de la compra', 'src/sim.js', '    s.money -= a.money;\n', '    s.money -= a.money < 0 ? Math.ceil(a.money / 2) : a.money;\n'],
+  ['deshacer ignora la ventana', 'src/sim.js', "if (stale(s, g)) { s.undo.pop(); return { ok: false, reason: 'late' }; }", ''],
+  ['deshacer un borrado sin plata igual lo hace', 'src/sim.js', "if (paid(s) && owe > 0 && s.money < owe) return { ok: false, reason: 'money' };", ''],
+  ['deshacer un giro vacía la máquina', 'src/sim.js', 'if (a.keep && cur?.kind === p.kind)', 'if (false)'],
+  ['deshacer no pierde lo que tenía la pieza', 'src/sim.js', '      if (cur) loseContents(s, cur);\n      s.cells[a.y', '      s.cells[a.y'],
+  ['deshacer recuerda sin tope', 'src/sim.js', 'while (n > UNDO.max && s.undo.length > 1)', 'while (false)'],
+  ['las piezas fijas entran en deshacer', 'src/sim.js', 'if (!c.fixed) note(s, x, y, c,', 'note(s, x, y, c,'],
+  ['el filtro deja pasar el elegido por el frente', 'src/sim.js', 'type === c.pick ? sides : [c.dir]', 'type === c.pick ? [...sides, c.dir] : [c.dir]'],
+  ['el filtro saca de costado el que no eligió', 'src/sim.js', 'type === c.pick ? sides : [c.dir]', 'type === c.pick ? sides : [c.dir, ...sides]'],
+  ['el filtro acepta por un costado', 'src/sim.js', "case 'filter': return d === cell.dir;", "case 'filter': return true;"],
+  ['el filtro no alterna los costados', 'src/sim.js', "    if (c.kind === 'filter' && item.type === c.pick) c.turn = (c.turn + k + 1) % 2;", ''],
+  ['el reparto no le dice al filtro qué viaja', 'src/sim.js', 'const to = reach(s, x, y, c.dir, new Set(), kind);', 'const to = reach(s, x, y, c.dir, new Set());'],
+  ['setPick cambia una pieza fija', 'src/sim.js', "  if (c.fixed) return { ok: false, reason: 'fixed' };\n  if (c.pick", '  if (c.pick'],
+  ['la propina se paga aunque uno salga tarde', 'src/sim.js', '(s.tips[o.group] ?? 0) + (onTime ? 1 : 0)', '(s.tips[o.group] ?? 0) + 1'],
+  ['el grupo no saltea la llegada siguiente', 'src/sim.js', '  s.skip = true;\n', ''],
+  ['el grupo se forma con la cola casi llena', 'src/sim.js', 's.orders.length + 2 > QUEUE_MAX', 's.orders.length + 1 > QUEUE_MAX'],
+  ['el grupo tira el azar bajo el nivel', 'src/sim.js', "if (!isCareer(s) || s.level < GROUP.level || s.orders.length + 2 > QUEUE_MAX || rand(s) >= GROUP.chance)", "if (rand(s) >= GROUP.chance || !isCareer(s) || s.level < GROUP.level || s.orders.length + 2 > QUEUE_MAX)"],
+  ['los dos del grupo nacen encimados', 'src/crowd.js', 'x: c.enterX - born++ * CROWD.gap, z: c.z', 'x: c.enterX, z: c.z'],
 ];
 
 const TIMEOUT = 180000;
 let bad = 0;
+if (process.argv.includes('--check')) {
+  for (const [name, file, find] of MUTATIONS) {
+    const n = readFileSync(file, 'utf8').split(find).length - 1;
+    if (n !== 1) { console.log(`VIEJA   ${name}: el texto aparece ${n} veces en ${file}`); bad++; }
+  }
+  console.log(`${MUTATIONS.length - bad} de ${MUTATIONS.length} mutaciones al día.`);
+  process.exit(bad ? 1 : 0);
+}
 for (const [name, file, find, replace] of MUTATIONS) {
   const original = readFileSync(file, 'utf8');
   if (original.split(find).length !== 2) { console.log(`VIEJA   ${name}: el texto aparece ${original.split(find).length - 1} veces en ${file}`); bad++; continue; }

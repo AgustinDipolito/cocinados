@@ -35,9 +35,6 @@ test('toda frase que el código pide existe, y toda frase del catálogo se usa',
   const asked = [...code.matchAll(/\bt\('(\w+)'\s*[,)]/g)].map(m => m[1]);
   assert.ok(asked.length > 40, 'se encontraron muy pocas llamadas a t()');
   for (const k of [...asked, ...familyKeys]) assert.ok(k in STRINGS.es, `falta la frase «${k}»`);
-  const simLog = [...readFileSync('src/sim.js', 'utf8').matchAll(/'(log[A-Z]\w+)'/g)].map(m => m[1]); // las frases del registro las nombra el motor
-  assert.ok(simLog.length >= 8, 'se encontraron muy pocas frases de registro');
-  for (const k of simLog) assert.ok(k in STRINGS.es, `falta la frase «${k}»`);
   const used = new Set([...literal, ...familyKeys]);
   for (const k in STRINGS.es) assert.ok(used.has(k), `la frase «${k}» no se usa en ningún lado`);
 });

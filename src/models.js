@@ -2,7 +2,7 @@
 // Cada máquina mira hacia +X (su salida); quien la coloca la gira según la dirección de la celda.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { RECIPES, TIMES } from './data.js';
+import { RECIPES, TIMES, PICKS } from './data.js';
 import { stockCap, assembleTime } from './sim.js';
 import { curb } from './crowd.js';
 
@@ -72,7 +72,7 @@ export const beltTexture = canvasTexture(128, (g, s) => {
   for (const x of [8, 72]) { g.beginPath(); g.moveTo(x, 28); g.lineTo(x + 36, 64); g.lineTo(x, 100); g.stroke(); }
 });
 M.belt = new THREE.MeshStandardMaterial({ map: beltTexture, roughness: 0.9 });
-M.rubber = std(C.rubber, 0.9); // goma lisa: el divisor y el puente no corren en un solo sentido
+M.rubber = std(C.rubber, 0.9); // goma lisa y quieta: el divisor, y el carril del puente por el que no entra nada
 
 const floorTexture = canvasTexture(256, (g, s) => {
   const h = s / 2;
@@ -106,6 +106,17 @@ export const jamTexture = spriteTexture((g, s) => {
   g.lineWidth = 8; g.lineJoin = 'round'; g.strokeStyle = '#2a1f17'; g.stroke();
   g.fillStyle = '#2a1f17';
   for (const x of [c - s * 0.11, c + s * 0.04]) g.fillRect(x, c - s * 0.15, s * 0.07, s * 0.3);
+});
+
+/** Marca de «se puede mejorar»: disco dorado con flecha hacia arriba. Redonda y dorada, distinta del aviso rojo y del rombo. */
+export const hintTexture = spriteTexture((g, s) => {
+  const c = s / 2;
+  g.beginPath(); g.arc(c, c, s * 0.42, 0, 7);
+  g.fillStyle = '#f2c14e'; g.fill();
+  g.lineWidth = 8; g.strokeStyle = '#2a1f17'; g.stroke();
+  g.lineWidth = 12; g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = '#fff8e8';
+  g.beginPath(); g.moveTo(c, c + s * 0.22); g.lineTo(c, c - s * 0.2);
+  g.moveTo(c - s * 0.16, c - s * 0.04); g.lineTo(c, c - s * 0.2); g.lineTo(c + s * 0.16, c - s * 0.04); g.stroke();
 });
 
 /** Marca sobre un cliente: cada estado con su forma (círculo, triángulo, cuadrado, estallido) además del color. */
@@ -235,6 +246,27 @@ function pennant() {
 /** Muestra los primeros n de una lista de mallas. */
 const showCount = (list, n) => list.forEach((o, i) => { o.visible = i < n; });
 
+const SURFACE_BELT = 0.185; // altura de la goma de una cinta, donde llegan las rampas del puente
+/** Tramo de goma con flechas a lo largo de +X. La u va de 0 a len: un tramo corto muestra un pedazo, sin estirar la flecha. */
+function beltStrip(len, wid, x, y) {
+  const s = mesh(geo(`strip${len},${wid}`, () => {
+    const g = new THREE.PlaneGeometry(len, wid), uv = g.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * len);
+    return g.rotateX(-Math.PI / 2);
+  }), M.belt, x, y, 0);
+  s.castShadow = false;
+  return s;
+}
+/** Viga lateral del puente: trapecio que acompaña las rampas, con un arco abierto por donde pasa el carril bajo. */
+const bridgeBeam = () => geo('bridgeBeam', () => {
+  const top = BRIDGE_TOP + 0.06, s = new THREE.Shape();
+  s.moveTo(-0.5, 0); s.lineTo(-0.3, 0); s.lineTo(-0.3, 0.3);
+  s.absarc(0, 0.3, 0.3, Math.PI, 0, true); // arco de 0,6 de ancho que llega a 0,6, la cara de abajo del tramo plano
+  s.lineTo(0.3, 0); s.lineTo(0.5, 0); s.lineTo(0.5, SURFACE_BELT + 0.06);
+  s.lineTo(0.25, top); s.lineTo(-0.25, top); s.lineTo(-0.5, SURFACE_BELT + 0.06); s.closePath();
+  return new THREE.ExtrudeGeometry(s, { depth: 0.04, bevelEnabled: false });
+});
+
 // ---------- máquinas ----------
 // Cada constructor devuelve { body, ui?, update?(cell, t, playing) }.
 // body gira con la dirección; ui (barras) queda mirando a la cámara.
@@ -261,16 +293,59 @@ const builders = {
     return { body };
   },
 
-  /** Puente: un carril bajo de oeste a este y uno alto de norte a sur, sobre cuatro patas. */
+  /**
+   * Filtro: la misma base del divisor (el producto pasa a la altura de cinta), flecha al frente y a cada costado, y un
+   * cartel en la esquina de atrás que lo distingue: un poste con una bandejita que muestra el ingrediente elegido.
+   */
+  filter() {
+    const top = mesh(geo('padTop', () => new THREE.PlaneGeometry(0.86, 0.86).rotateX(-Math.PI / 2)), M.rubber, 0, 0.181, 0);
+    top.castShadow = false;
+    const body = group(box(0.98, 0.18, 0.98, M.darkSteel, 0, 0.09, 0, 0.05), top);
+    for (const turn of [0, 1, 3]) { const g = group(outArrow(0.185)); g.rotation.y = -turn * Math.PI / 2; body.add(g); }
+    for (const z of [-0.43, 0.43]) body.add(box(0.06, 0.07, 0.12, M.steel, -0.46, 0.21, z, 0.02));
+    // el cartel, fuera del paso: poste de 0,18 a 0,75 y bandeja arriba, en la esquina de atrás a la izquierda
+    const holder = group(); holder.position.set(-0.36, 0.775, -0.36); holder.scale.setScalar(0.55);
+    body.add(cyl(0.02, 0.02, 0.57, M.steel, -0.36, 0.465, -0.36, 8), cyl(0.13, 0.13, 0.025, M.steel, -0.36, 0.7625, -0.36), holder);
+    let shown = null; // el ingrediente puesto en la bandeja: se rearma sólo cuando cambia
+    const show = type => {
+      if (type === shown) return;
+      holder.clear();
+      holder.add(buildItem(type === 'burger' ? { type, recipeKey: 'classic' } : { type }));
+      shown = type;
+    };
+    show(PICKS[0]); // fantasma y miniatura de la barra
+    return { body, update: c => show(c.pick ?? PICKS[0]) };
+  },
+
+  /**
+   * Puente: un carril bajo que pasa por debajo (este-oeste) y una pasarela con rampas (norte-sur) apoyada en dos
+   * vigas con arco. Cada carril se modela a lo largo de su propio +X, como una cinta, y se gira hacia donde corre.
+   * update recibe flow = [esteOeste, norteSur] (bridgeFlow): dirección con flechas, o null con goma lisa quieta.
+   */
   bridge() {
-    const low = mesh(geo('bridgeLow', () => new THREE.PlaneGeometry(1, 0.62).rotateX(-Math.PI / 2)), M.rubber, 0, 0.181, 0);
-    const high = mesh(geo('bridgeHigh', () => new THREE.PlaneGeometry(0.62, 1).rotateX(-Math.PI / 2)), M.rubber, 0, BRIDGE_TOP + 0.001, 0);
-    low.castShadow = high.castShadow = false;
-    const body = group(box(1, 0.18, 0.74, M.darkSteel, 0, 0.09, 0, 0.03), low,
-      box(0.74, 0.08, 1, M.darkSteel, 0, BRIDGE_TOP - 0.04, 0, 0.03), high,
-      box(0.05, 0.06, 1, M.steel, 0.36, BRIDGE_TOP + 0.03, 0, 0.02), box(0.05, 0.06, 1, M.steel, -0.36, BRIDGE_TOP + 0.03, 0, 0.02));
-    for (const x of [-0.42, 0.42]) for (const z of [-0.42, 0.42]) body.add(cyl(0.04, 0.04, BRIDGE_TOP, M.steel, x, BRIDGE_TOP / 2, z, 10));
-    return { body };
+    const lane = (...kids) => { const g = group(...kids); g.userData.belts = kids.filter(o => o.material === M.belt); return g; };
+    const low = lane(box(1, 0.18, 0.56, M.darkSteel, 0, 0.09, 0, 0.03), beltStrip(1, 0.48, 0, 0.181),
+      box(1, 0.05, 0.04, M.steel, 0, 0.2, 0.26, 0.015), box(1, 0.05, 0.04, M.steel, 0, 0.2, -0.26, 0.015));
+    // pasarela: rampa de subida, tramo plano a BRIDGE_TOP entre -0,25 y 0,25, rampa de bajada hasta la altura de cinta
+    const rise = BRIDGE_TOP - SURFACE_BELT, slope = Math.atan2(rise, 0.25), ramp = Math.hypot(rise, 0.25), midY = (BRIDGE_TOP + SURFACE_BELT) / 2;
+    const deck = (len, x, y, a) => { const s = beltStrip(len, 0.48, 0, 0.001), g = group(box(len, 0.04, 0.52, M.darkSteel, 0, -0.02, 0, 0.01), s); g.position.set(x, y, 0); g.rotation.z = a; return [g, s]; };
+    const parts = [deck(ramp, -0.375, midY, slope), deck(0.5, 0, BRIDGE_TOP, 0), deck(ramp, 0.375, midY, -slope)];
+    const high = group(...parts.map(([g]) => g), ...[-0.3, 0.3].map(z => mesh(bridgeBeam(), M.steel, 0, 0, z - 0.02)));
+    high.userData.belts = parts.map(([, s]) => s);
+    // d: hacia dónde corre (índice de DIRS) o null; axis: la dirección por omisión, que fija el eje del carril
+    const orient = (g, d, axis) => {
+      g.rotation.y = -(d ?? axis) * Math.PI / 2;
+      for (const s of g.userData.belts) s.material = d == null ? M.rubber : M.belt;
+    };
+    orient(low, 0, 0); orient(high, 1, 1); // sin flow (miniatura y fantasma): bajo hacia el este, alto hacia el sur
+    return {
+      body: group(low, high),
+      update(c, t, playing, flow) {
+        if (!flow) return;
+        orient(low, flow[0], 0);
+        orient(high, flow[1], 1);
+      },
+    };
   },
 
   raw: () => source(M.meatBox, () => patty(M.raw), PATTY_H),
@@ -415,7 +490,10 @@ const toys = new Map(), toyOf = color => toys.get(color) ?? (toys.set(color, toy
 /** Pierna o brazo que cuelga de su articulación (y), para balancearlo al caminar. */
 const limb = (w, h, m, x, y) => { const g = group(box(w, h, 0.09, m, 0, -h / 2, 0, 0.035)); g.position.set(x, y, 0); return g; };
 
-/** Un cliente mirando a +Z. look (entero) elige la variante de colores. update(mark, walking, t): marca sobre la cabeza ('' | 'soon' | 'late' | 'angry' | null) y paso. */
+/** Bolsa de papel del pedido, apoyada en y = 0 (los mismos materiales que la del despacho). */
+export const buildBag = () => group(box(0.16, 0.2, 0.11, M.bag, 0, 0.1, 0, 0.02), box(0.16, 0.03, 0.115, M.cream, 0, 0.2, 0, 0.01));
+
+/** Un cliente mirando a +Z. look (entero) elige la variante de colores. update(mark, walking, t, bag): marca sobre la cabeza ('' | 'soon' | 'late' | 'angry' | null), paso y la bolsa en la mano. */
 export function buildCustomer(look) {
   const h = Math.imul(look, 2654435761) >>> 0, of = (list, k) => toyOf(list[(h >>> k) % list.length]);
   const shirt = of(SHIRTS, 0), skin = of(SKINS, 8);
@@ -424,10 +502,14 @@ export function buildCustomer(look) {
   const hair = mesh(geo('hair', () => new THREE.SphereGeometry(0.138, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2)), of(HAIRS, 16), 0, 0.79, -0.012);
   const eyes = [-0.047, 0.047].map(x => mesh(geo('eye', () => new THREE.SphereGeometry(0.02, 8, 6)), M.black, x, 0.78, 0.118));
   const body = group(...legs, ...arms, box(0.32, 0.34, 0.2, shirt, 0, 0.47, 0, 0.08), head, hair, ...eyes);
+  const bag = buildBag(); // cuelga de la mano derecha y se balancea con el brazo
+  bag.position.set(0.04, -0.47, 0); bag.visible = false;
+  arms[1].add(bag);
   const sign = new THREE.Sprite(MARKS['']);
   sign.scale.setScalar(0.42); sign.position.y = 1.15; sign.renderOrder = 8;
   const root = group(body, sign);
-  root.userData.update = (mark, walking, t) => {
+  root.userData.update = (mark, walking, t, hasBag = false) => {
+    bag.visible = hasBag;
     sign.visible = mark != null;
     if (sign.visible) sign.material = MARKS[mark];
     const swing = walking ? Math.sin(t * 11) * 0.6 : 0;
@@ -446,6 +528,8 @@ export function buildCustomer(look) {
  */
 export function buildLot(W, H, hole = () => false, pillar = () => false) {
   const g = group();
+  g.userData.tall = []; // lo alto del fondo (paño de pared y ventanas): la escena lo esconde al mirar desde el norte
+  const tall = (...o) => { g.userData.tall.push(...o); return o; };
   const tex = floorTexture.clone();
   tex.repeat.set(W / 2, H / 2);
   tex.needsUpdate = true;
@@ -459,7 +543,7 @@ export function buildLot(W, H, hole = () => false, pillar = () => false) {
   // cada tramo de pared junta las celdas seguidas que tienen el mismo borde (una pared por tramo, sin costuras)
   const runs = (n, edge, f) => { for (let i = 0, a = -1; i <= n; i++) { const on = i < n && edge(i); if (on && a < 0) a = i; if (!on && a >= 0) { f(a, i); a = -1; } } };
   for (let y = 0; y < H; y++) runs(W, x => inside(x, y) && !inside(x, y - 1), (a, b) => g.add( // pared del fondo, alta
-    box(b - a + 0.5, 1.9, 0.25, wallM, (a + b) / 2, 0.95, y - 0.125, 0.04), box(b - a + 0.52, 0.62, 0.27, band, (a + b) / 2, 0.31, y - 0.125, 0.04)));
+    ...tall(box(b - a + 0.5, 1.9, 0.25, wallM, (a + b) / 2, 0.95, y - 0.125, 0.04)), box(b - a + 0.52, 0.62, 0.27, band, (a + b) / 2, 0.31, y - 0.125, 0.04)));
   for (let x = 0; x <= W; x++) for (const [side, dx] of [[x, -1], [x - 1, 1]]) // pared de costado, baja: al oeste y al este del piso
     runs(H, y => inside(side, y) && !inside(side + dx, y), (a, b) => g.add(box(0.25, 0.7, b - a + 0.25, wallM, x + dx * 0.125, 0.35, (a + b) / 2 - 0.125, 0.04)));
   const outside = std(C.bg, 0.9);
@@ -473,7 +557,7 @@ export function buildLot(W, H, hole = () => false, pillar = () => false) {
   g.add(box(c.x1 - c.x0, 0.5, c.z1 - c.z0, std(C.sidewalk, 0.85), cx, -0.25, (c.z0 + c.z1) / 2, 0.1),
     box(c.x1 - c.x0, 0.08, 0.14, std(C.curb, 0.8), cx, 0, c.z1 - 0.07, 0.03));
   for (let x = 2; x + 1.5 <= W; x += 4) { // una ventana cada cuatro celdas, donde la pared del fondo es la del frente del terreno
-    if (inside(x, 0) && inside(x + 1, 0)) g.add(box(1.7, 0.8, 0.06, M.wood, x + 0.75, 1.25, 0.01, 0.06), box(1.5, 0.62, 0.08, glass, x + 0.75, 1.25, 0.02, 0.04));
+    if (inside(x, 0) && inside(x + 1, 0)) g.add(...tall(box(1.7, 0.8, 0.06, M.wood, x + 0.75, 1.25, 0.01, 0.06), box(1.5, 0.62, 0.08, glass, x + 0.75, 1.25, 0.02, 0.04)));
   }
   return g;
 }

@@ -42,9 +42,19 @@ test('fila: el que llega camina desde el costado hasta el final; el que cobra se
   settle(crowd, orders, l => l.find(p => p.key === 2 && !p.walking));
   orders.shift();
   p = stepCrowd(crowd, orders, [{ type: 'delivered', id: 1, x: 10, y: 3, amount: 24, late: false }], 2, 0.1, C, false).find(p => p.key === 1);
-  assert.deepEqual([p.queued, p.mark, p.tx], [false, null, C.leaveX]);
+  assert.deepEqual([p.queued, p.mark, p.bag, p.walking, p.heading, p.x], [false, null, false, false, Math.PI, C.headX]);
+  assert.deepEqual([p.grab.x, p.grab.y], [10, 3], 'la bolsa sale del despacho que entregó');
+  let k = p.grab.k, waited = 0.1;
   const next = stepCrowd(crowd, orders, [], 2, 0.1, C, false).find(p => p.key === 2);
-  assert.ok(next.walking && next.tx === C.headX, 'el de atrás no avanza a la cabeza');
+  assert.ok(next.walking && next.tx === C.headX, 'el de atrás no avanza a la cabeza mientras el que cobró espera');
+  waited += 0.1;
+  for (p = crowd.people.get(1); p.grab; waited += 0.1) {
+    assert.ok(p.grab.k >= k && p.x === C.headX && !p.walking, 'mientras espera la bolsa no camina y la bolsa avanza');
+    k = p.grab.k;
+    p = stepCrowd(crowd, orders, [], 2, 0.1, C, false).find(p => p.key === 1);
+  }
+  assert.ok(k > 0.8 && Math.abs(waited - CROWD.grab) < 0.15, `esperó ${waited.toFixed(2)} s con k ${k}`);
+  assert.deepEqual([p.bag, p.grab, p.tx, p.mark, p.leaving], [true, null, C.leaveX, null, true], 'sale con la bolsa por el lado de la caja');
   const end = settle(crowd, orders, l => !l.some(p => p.key === 1));
   assert.deepEqual(end.map(p => [p.key, p.x, p.queued]), [[2, C.headX, true]]);
 });
@@ -55,7 +65,7 @@ test('fila: al vencer se va enojado por donde vino; sin evento (otra partida) se
   orders.splice(1, 1);
   let list = stepCrowd(crowd, orders, [{ type: 'expired', id: 2 }], 70, 0.1, C, false);
   const p = list.find(p => p.key === 2);
-  assert.deepEqual([p.queued, p.mark, p.tx, p.tz], [false, 'angry', C.enterX, C.lane]);
+  assert.deepEqual([p.queued, p.mark, p.tx, p.tz, p.bag, p.grab], [false, 'angry', C.enterX, C.lane, false, null], 'el enojado se va sin bolsa');
   orders.pop();
   list = stepCrowd(crowd, orders, [], 70, 0.1, C, false);
   assert.ok(!list.some(p => p.key === 3), 'un pedido que se fue sin evento sigue dibujado');
@@ -72,7 +82,7 @@ test('fila: con la cola llena, el que llega mira la fila y se vuelve enojado, si
   assert.ok(v, 'el que encontró la cola llena no aparece');
   assert.equal(queued(list).length, QUEUE_MAX);
   assert.equal(v.tx, C.headX - QUEUE_MAX * CROWD.gap);
-  assert.equal(v.mark, null);
+  assert.deepEqual([v.mark, v.bag, v.grab], [null, false, null]);
   list = settle(crowd, orders, l => l.find(p => p.key === v.key)?.mark === 'angry');
   assert.equal(list.find(p => p.key === v.key).tx, C.enterX);
   list = settle(crowd, orders, l => !l.some(p => p.key === v.key));
@@ -101,8 +111,9 @@ test('fila: jugando una partida, la fila es siempre la cola de pedidos, y cada s
     assert.deepEqual(queued(list).map(p => p.key), s.orders.map(o => o.id), `a los ${s.time.toFixed(1)} s`);
     for (const p of list) {
       if (!before.has(p.key) && !p.queued) seen.visitor++;
-      if (before.has(p.key) && !p.queued && p.leaving && p.tx === curb(s).leaveX && p.mark === null) seen.paid++;
+      if (before.has(p.key) && !p.queued && p.leaving && p.tx === curb(s).leaveX && p.mark === null && p.bag) seen.paid++;
       if (p.mark === 'angry' && typeof p.key === 'number') seen.angry++;
+      assert.ok(!(p.mark === 'angry' && (p.bag || p.grab)), 'un enojado con bolsa');
     }
     removed += [...before].filter(k => !crowd.people.has(k)).length;
   }
@@ -111,4 +122,13 @@ test('fila: jugando una partida, la fila es siempre la cola de pedidos, y cada s
   assert.ok(s.stats.expired > 0 && seen.angry > 0, 'nadie se fue enojado');
   assert.ok(s.stats.turnedAway > 0 && seen.visitor > 0, 'nadie encontró la cola llena');
   assert.ok(removed > 0);
+});
+
+test('fila: dos que llegan en el mismo cuadro (un grupo) no nacen encimados: el segundo, un lugar más atrás', () => {
+  const crowd = newCrowd(), orders = [order(1)];
+  stepCrowd(crowd, orders, [], 0, 0.016, C, false);
+  orders.push(order(2, 1), order(3, 1));
+  const list = stepCrowd(crowd, orders, [], 1, 0, C, false);
+  const x = k => list.find(p => p.key === k).x;
+  assert.deepEqual([x(2), x(3)], [C.enterX, C.enterX - CROWD.gap]);
 });

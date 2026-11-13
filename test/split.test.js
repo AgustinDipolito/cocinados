@@ -298,3 +298,51 @@ test('propiedad: en cocinas mixtas, 300 s de pedidos se entregan todos y ninguno
     assert.equal(s.stats.onTime + s.stats.late, asked, where);
   }
 });
+
+// ---------- bridgeFlow: hacia dónde corre cada carril del puente ----------
+
+/** Un modo libre vacío con un puente en (3, 3). */
+function flowBoard() {
+  const s = sim.newGame('sandbox', 1);
+  s.autoOrders = false; s.orders.length = 0; s.cells.fill(null);
+  sim.place(s, 3, 3, 'bridge');
+  return s;
+}
+
+test('bridgeFlow: una cinta desde cada uno de los cuatro lados marca su carril y su sentido', () => {
+  const cases = [[2, 3, 0, [0, null]], [3, 2, 1, [null, 1]], [4, 3, 2, [2, null]], [3, 4, 3, [null, 3]]];
+  for (const [x, y, d, want] of cases) {
+    const s = flowBoard();
+    sim.place(s, x, y, 'belt', d);
+    assert.deepEqual(sim.bridgeFlow(s, 3, 3), want, `cinta en ${x},${y} hacia ${d}`);
+    sim.place(s, x, y, 'belt', (d + 2) % 4);
+    assert.deepEqual(sim.bridgeFlow(s, 3, 3), [null, null], 'una cinta que se aleja no alimenta');
+  }
+  assert.deepEqual(sim.bridgeFlow(flowBoard(), 3, 3), [null, null], 'sin vecinos, nada');
+});
+
+test('bridgeFlow: divisor de costado, máquina, despacho y otro puente en cadena', () => {
+  let s = flowBoard();
+  sim.place(s, 3, 2, 'splitter', 0); // mira al este: su costado derecho (sur) da al puente
+  assert.deepEqual(sim.bridgeFlow(s, 3, 3), [null, 1]);
+  s = flowBoard();
+  sim.place(s, 2, 3, 'grill', 0);
+  assert.deepEqual(sim.bridgeFlow(s, 3, 3), [0, null]);
+  sim.place(s, 2, 3, 'dispatch', 0);
+  assert.deepEqual(sim.bridgeFlow(s, 3, 3), [null, null], 'el despacho no saca');
+  s = flowBoard();
+  sim.place(s, 4, 3, 'bridge'); sim.place(s, 5, 3, 'bridge'); sim.place(s, 6, 3, 'belt', 2);
+  assert.deepEqual(sim.bridgeFlow(s, 3, 3), [2, null], 'la cadena de puentes lleva el sentido de la cinta');
+  sim.place(s, 6, 3, 'belt', 0);
+  assert.deepEqual(sim.bridgeFlow(s, 3, 3), [null, null]);
+  sim.place(s, 2, 3, 'bridge');
+  assert.deepEqual(sim.bridgeFlow(s, 4, 3), [null, null], 'puentes sin cinta no se alimentan entre sí');
+});
+
+test('bridgeFlow: un carril con producto manda su sentido, aunque una cinta empuje al revés', () => {
+  const s = flowBoard();
+  sim.place(s, 2, 3, 'belt', 0);
+  sim.at(s, 3, 3).item = { id: 1, type: 'bun', d: 2, readyAt: 0 };
+  sim.at(s, 3, 3).item2 = { id: 2, type: 'bun', d: 3, readyAt: 0 };
+  assert.deepEqual(sim.bridgeFlow(s, 3, 3), [2, 3]);
+});

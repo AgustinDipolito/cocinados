@@ -98,7 +98,7 @@ progress::-webkit-progress-bar { background: var(--line); }
 progress::-webkit-progress-value { background: var(--ok); }
 progress::-moz-progress-bar { background: var(--ok); }
 #controls { display: flex; flex-wrap: wrap; gap: var(--gap); }
-.btn.moreBtn { display: none; }
+.btn.moreBtn, .btn.expandTop { display: none; } /* expandTop: Ampliar en la barra de arriba, sólo en teléfono parado */
 
 .ico { width: var(--ico); height: var(--ico); fill: currentColor; flex: none; }
 .ico.q { display: grid; place-items: center; font-weight: 600; font-size: var(--fs-md); border: var(--border) solid currentColor; border-radius: var(--r-pill); line-height: 1; }
@@ -125,6 +125,8 @@ progress::-moz-progress-bar { background: var(--ok); }
 .thumb.small { width: var(--thumb-small); height: var(--thumb-small); }
 .ticket h3 { font-size: var(--fs-sm); font-weight: 600; }
 .ticket p { font-size: var(--fs-xs); color: var(--ink-soft); }
+/* pedido de un grupo: un dato, no un control, así que sin amarillo */
+.groupTag { display: inline-block; margin-left: 4px; padding: 0 6px; border: var(--border) solid var(--line); border-radius: var(--r-pill); font-size: var(--fs-xs); color: var(--ink-soft); white-space: nowrap; }
 .ticketFoot { grid-column: 1 / -1; display: flex; justify-content: space-between; font-weight: 600; font-variant-numeric: tabular-nums; }
 .timer { color: var(--ok); }
 .meter { grid-column: 1 / -1; height: var(--meter-h); border-radius: var(--r-pill); background: var(--line); overflow: hidden; }
@@ -143,6 +145,10 @@ progress::-moz-progress-bar { background: var(--ok); }
 
 /* ---------- centro: estado y avisos, dentro de la grilla ---------- */
 #center { grid-area: main; display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: var(--gap); pointer-events: none !important; }
+/* fila de arriba: el cartel de pausa y Deshacer, lejos de la vereda y la fila de clientes de abajo */
+#centerTop { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--gap); }
+#undo { pointer-events: auto; box-shadow: var(--shadow-float); }
+#undo[hidden] { display: none; } /* .btn trae su display: hidden solo no lo esconde */
 .chip { padding: 6px var(--pad); border-radius: var(--r-pill); background: var(--paper); font-weight: 600; box-shadow: var(--shadow-float); }
 #toast {
   margin-top: auto; max-width: min(34rem, 100%); padding: var(--gap) var(--pad); border-radius: var(--r-btn);
@@ -151,7 +157,7 @@ progress::-moz-progress-bar { background: var(--ok); }
 }
 #toast.show { opacity: 1; visibility: visible; transition-delay: 0s; }
 
-/* ---------- costado: inspector y actividad ---------- */
+/* ---------- costado: inspector ---------- */
 #side { grid-area: side; align-self: start; max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: var(--gap); pointer-events: none; padding-bottom: 6px; }
 #side > * { pointer-events: auto; }
 .panelHead { display: flex; align-items: center; justify-content: space-between; gap: var(--gap); }
@@ -164,11 +170,6 @@ progress::-moz-progress-bar { background: var(--ok); }
 #insActions:empty { display: none; }
 #insActions .price { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 #insActions .short .price { color: var(--bad); } /* sin plata: el precio dice cuánto falta, además del color */
-#log { padding-block: 0; }
-#log summary { font-weight: 600; cursor: pointer; min-height: var(--touch); align-content: center; }
-#log[open] { padding-bottom: var(--pad); }
-#logList li { padding: 6px 0; border-top: 1px solid var(--line); font-size: var(--fs-xs); }
-#logList time { color: var(--ink-soft); font-variant-numeric: tabular-nums; margin-right: 4px; }
 
 /* ---------- barra de construcción ---------- */
 #tools { grid-area: tools; justify-self: center; max-width: 100%; display: flex; gap: 6px; overflow-x: auto; padding: var(--gap); }
@@ -186,10 +187,12 @@ progress::-moz-progress-bar { background: var(--ok); }
 .tool:disabled { cursor: default; color: var(--ink-soft); }
 .tool .dir { display: grid; transform: rotate(var(--turn)); }
 .sep { flex: none; width: var(--border); background: var(--line); margin: 6px 2px; }
-/* Notebook: las catorce herramientas de ancho fijo no entran; cada una toma el ancho de su nombre. */
+.toolCap { display: none; } /* la leyenda es de la compacta: en escritorio cada herramienta lleva su nombre */
+/* Notebook: las quince herramientas de ancho fijo no entran; cada una toma el ancho de su nombre, con 4 px de cada lado
+   y 2 px entre una y otra. */
 @media (min-width: 761px) and (max-width: 1340px) and (min-height: 521px) {
-  #tools { gap: 4px; }
-  .tool { width: auto; min-width: var(--touch); padding-inline: 6px; }
+  #tools { gap: 2px; }
+  .tool { width: auto; min-width: var(--touch); padding-inline: 4px; }
   /* La barra de arriba en un renglón: los botones quedan con su ícono (el nombre sigue en title y aria-label). */
   #stats { column-gap: var(--pad); }
   #controls .lbl { display: none; }
@@ -262,15 +265,27 @@ dialog.sheet::backdrop { background: var(--scrim); }
 @media (max-width: 760px) and (min-height: 521px) {
   #hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto auto; grid-template-areas: 'top' 'orders' 'main' 'side' 'tools'; }
   #side { max-height: var(--side-h-compact); align-self: end; }
-  #tools { justify-self: stretch; }
+  /* Catorce herramientas sin desplazar: 7 columnas por 2 filas. A 360 px el panel mide 360 - 16 (HUD) - 16 (relleno)
+     = 328 px; 7 × 44 + 6 × 2 = 320: cada celda llega al piso de toque. El nombre pasa al renglón de leyenda.
+     La quince (Ampliar) no entra: pasa a la barra de arriba, dentro de «más». */
+  #tools { justify-self: stretch; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; overflow: visible; }
+  #tools .expandTool { display: none; }
+  #top.more .btn.expandTop { display: inline-flex; }
+  .tool { width: auto; min-width: 0; padding: 2px; }
+  .tool .name, .sep { display: none; }
+  .toolCap { display: block; grid-column: 1 / -1; font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-inline: 4px; }
   #orders { flex-wrap: wrap; }
   #tickets { flex: 1 1 var(--ticket-w); }
 }
 /* Poco alto (teléfono apaisado): las herramientas y los pedidos pasan a los costados y la cocina queda al medio. */
 @media (max-height: 520px) {
   #hud { grid-template-columns: auto minmax(0, 1fr) minmax(0, var(--side-col)); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: 'top top top' 'tools main orders' 'tools main side'; }
-  #tools { flex-direction: column; overflow: hidden auto; justify-self: start; align-self: start; max-height: 100%; }
-  .sep { width: auto; height: var(--border); margin: 2px 6px; }
+  /* Las quince en una columna de 3 × 5 sin desplazar: 3 × 44 + 2 × 2 = 136 px de ancho; sin precio (queda en la leyenda) cada fila mide
+     44 px: 5 × 44 + 4 × 2 + leyenda en dos renglones (unos 34) + 16 de relleno = unos 280 de los 310 que hay. */
+  #tools { display: grid; grid-template-columns: repeat(3, var(--touch)); gap: 2px; overflow: visible; justify-self: start; align-self: start; max-height: 100%; }
+  .tool { width: auto; min-width: 0; padding: 2px; }
+  .tool .name, .tool .price, .sep { display: none; }
+  .toolCap { display: block; grid-column: 1 / -1; font-size: var(--fs-xs); font-weight: 600; padding-bottom: 2px; }
   #orders { flex-direction: column; overflow: hidden auto; align-self: start; max-height: 100%; }
   #tickets { flex-direction: column; overflow: visible; flex: none; padding: 0; }
   .ticket { width: auto; }

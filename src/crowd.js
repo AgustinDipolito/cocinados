@@ -2,8 +2,8 @@
 // y los eventos del cuadro y no decide nada de la partida. Sin three ni DOM, para probarla con node.
 
 // gap: distancia entre dos personas de la fila · speed: celdas por segundo de juego · look: segundos que
-// mira la fila llena quien llega antes de volverse.
-export const CROWD = { gap: 0.8, speed: 1.6, look: 1.2, size: 1.45 };
+// mira la fila llena quien llega antes de volverse · grab: segundos que el que cobró espera la bolsa en su lugar.
+export const CROWD = { gap: 0.8, speed: 1.6, look: 1.2, size: 1.45, grab: 0.7 };
 
 /** Estado de un pedido, el mismo de su tarjeta: '' a tiempo, 'soon' por vencer, 'late' vencido. */
 export function orderRisk(o, time) {
@@ -45,9 +45,10 @@ function walk(p, d) {
  * Avanza la fila un cuadro y devuelve las personas a dibujar.
  * orders: los pedidos en cola, en orden de llegada. events: los eventos del cuadro. time: tiempo de la partida.
  * dt: segundos de juego desde el cuadro anterior. c: la vereda (curb). still: movimiento reducido, nadie camina.
- * Persona: { key, look, x, z, heading, walking, queued, mark } con mark '' | 'soon' | 'late' | 'angry' | null.
+ * Persona: { key, look, x, z, heading, walking, queued, mark, bag, grab } con mark '' | 'soon' | 'late' | 'angry' | null,
+ * bag: lleva su bolsa · grab: null, o { x, y, k } mientras la bolsa viaja desde el despacho (x, y) con k de 0 a 1.
  *   en la fila   -> queued, va a su lugar (headX - puesto * gap) y lleva la marca de su pedido
- *   cobró        -> sale por leaveX, sin marca
+ *   cobró        -> espera CROWD.grab en su lugar mirando a la cocina (hold) y sale por leaveX con la bolsa, sin marca
  *   se le venció -> vuelve por enterX con marca de enojo
  *   cola llena   -> llega por el carril de paso, mira la fila y vuelve enojado; no es de ningún pedido
  * Un pedido que deja la cola sin evento (otra partida, reinicio) se borra en el acto.
@@ -58,15 +59,16 @@ export function stepCrowd(crowd, orders, events, time, dt, c, still) {
   const gone = new Map();
   let turned = 0;
   for (const e of events) {
-    if (e.type === 'delivered' && e.id != null) gone.set(e.id, 'paid');
+    if (e.type === 'delivered' && e.id != null) gone.set(e.id, e);
     else if (e.type === 'expired') gone.set(e.id, 'angry');
     else if (e.type === 'turnedAway') turned++;
   }
   const queued = new Set();
+  let born = 0; // los que aparecen en el mismo cuadro (un grupo) nacen uno detrás del otro, no encimados
   orders.forEach((o, i) => {
     queued.add(o.id);
     let p = P.get(o.id);
-    if (!p) P.set(o.id, p = { key: o.id, look: o.id, x: c.enterX, z: c.z, heading: Math.PI / 2, queued: true });
+    if (!p) P.set(o.id, p = { key: o.id, look: o.id, x: c.enterX - born++ * CROWD.gap, z: c.z, heading: Math.PI / 2, queued: true, bag: false, grab: null });
     p.tx = c.headX - i * CROWD.gap; p.tz = c.z;
     if (place) { p.x = p.tx; p.z = p.tz; }
     p.mark = orderRisk(o, time);
@@ -75,13 +77,22 @@ export function stepCrowd(crowd, orders, events, time, dt, c, still) {
     if (!p.queued || queued.has(key)) continue;
     const why = gone.get(key);
     if (!why || still) { P.delete(key); continue; }
-    Object.assign(p, { queued: false, mark: why === 'angry' ? 'angry' : null, tx: why === 'angry' ? c.enterX : c.leaveX, tz: c.lane, leaving: true });
+    if (why === 'angry') Object.assign(p, { queued: false, mark: 'angry', tx: c.enterX, tz: c.lane, leaving: true });
+    else Object.assign(p, { queued: false, mark: null, tx: p.x, tz: p.z, hold: CROWD.grab, grab: { x: why.x, y: why.y, k: 0 } }); // se queda a recibir la bolsa
   }
   if (!still) for (let i = 0; i < turned; i++) {
     const key = 'v' + crowd.seq++;
-    P.set(key, { key, look: 1000 + crowd.seq, x: c.enterX, z: c.lane, tx: c.headX - orders.length * CROWD.gap, tz: c.lane, heading: Math.PI / 2, queued: false, mark: null, wait: CROWD.look });
+    P.set(key, { key, look: 1000 + crowd.seq, x: c.enterX, z: c.lane, tx: c.headX - orders.length * CROWD.gap, tz: c.lane, heading: Math.PI / 2, queued: false, mark: null, bag: false, grab: null, wait: CROWD.look });
   }
   for (const [key, p] of P) {
+    if (p.grab) { // cobró: quieto mirando a la cocina mientras la bolsa viaja; con ella, se va por el lado de la caja
+      p.walking = false;
+      p.heading = Math.PI;
+      p.hold -= dt;
+      p.grab.k = Math.min(1, 1 - p.hold / CROWD.grab);
+      if (p.hold <= 0) Object.assign(p, { grab: null, hold: undefined, bag: true, tx: c.leaveX, tz: c.lane, leaving: true });
+      continue;
+    }
     p.walking = walk(p, CROWD.speed * dt);
     if (p.x !== p.tx || p.z !== p.tz) continue;
     if (!p.walking && !p.leaving) p.heading = Math.PI / 2; // quieto en la fila: mira hacia la cabeza

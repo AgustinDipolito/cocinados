@@ -1,14 +1,16 @@
 // La escena 3D: dibuja el estado de la simulación, no decide nada del juego.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { BELT_TIME, BUILD_ORDER, RECIPES, DIAG, LOTS } from './data.js';
-import { isStuck, diagShares, valid } from './sim.js';
-import { C, BRIDGE_TOP, beltTexture, alertTexture, jamTexture, buildMachine, buildItem, buildLot, buildGhost, tileFrame, burger, buildCustomer } from './models.js';
+import { BELT_TIME, BUILD_ORDER, RECIPES, DIAG } from './data.js';
+import { isStuck, diagShares, valid, bridgeFlow, lotOf } from './sim.js';
+import { C, BRIDGE_TOP, beltTexture, alertTexture, jamTexture, hintTexture, buildMachine, buildItem, buildLot, buildGhost, tileFrame, burger, buildCustomer, buildBag } from './models.js';
 import { CROWD, curb, newCrowd, stepCrowd } from './crowd.js';
 
 const PITCH = THREE.MathUtils.degToRad(54); // cuánto mira hacia abajo la cámara
 const SURFACE = { belt: 0.185, assembly: 0.47, bridge: BRIDGE_TOP + 0.005 }; // altura a la que apoya un producto (bridge: carril alto del puente)
 const smooth = p => p * p * (3 - 2 * p);
+const QUARTER = Math.PI / 2, TURN_TIME = 0.28; // giro de la vista: un cuarto en 280 ms de tiempo real
+const ramp = (a, b, p) => THREE.MathUtils.lerp(a, b, THREE.MathUtils.clamp(p, 0, 1));
 const inRects = (list, x, y) => (list ?? []).some(([x0, y0, x1, y1]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
 
 export function createScene(canvas) {
@@ -21,7 +23,6 @@ export function createScene(canvas) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(C.bg);
-  scene.fog = new THREE.Fog(C.bg, 60, 140);
   scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
   scene.environmentIntensity = 0.35;
 
@@ -35,13 +36,21 @@ export function createScene(canvas) {
   sun.shadow.radius = 5;
   scene.add(sun, sun.target);
 
-  const camera = new THREE.PerspectiveCamera(32, 1, 0.5, 300);
-  const view = { tx: 0, tz: 0, dist: 20, fitDist: 20 };
+  // far: fit puede llegar a 200 de distancia y alejar a 1,4 veces eso, más el fondo del local más grande
+  const camera = new THREE.PerspectiveCamera(32, 1, 0.5, 600);
+  // rot: el cuarto de destino (0 desde el sur, 1 desde el este); yaw: el ángulo dibujado; fitted: nadie movió desde fit
+  const view = { tx: 0, tz: 0, dist: 20, fitDist: 20, rot: 0, yaw: 0, fitted: false };
+  let spin = null; // giro en curso: { from, to, k, px?, py?, anchor? }
 
   const world = new THREE.Group(), itemLayer = new THREE.Group(), alerts = new THREE.Group(), jams = new THREE.Group(), crowdLayer = new THREE.Group();
   scene.add(world, itemLayer, alerts, jams, crowdLayer);
   let crowd = newCrowd(), crowdT = 0, crowdShown = []; const people = new Map(); // la fila de la vereda (crowd.js) y su modelo por persona
   let jamsOn = false;
+  const flying = new Map(); // la bolsa que va del despacho a la mano de cada cliente que cobró, por persona
+  const hint = new THREE.Sprite(new THREE.SpriteMaterial({ map: hintTexture, depthTest: false }));
+  hint.scale.setScalar(0.55); hint.renderOrder = 9; hint.visible = false;
+  scene.add(hint);
+  let hintCell = null;
   const selectFrame = tileFrame(C.select), hoverFrame = tileFrame(C.hover);
   scene.add(selectFrame, hoverFrame);
 
@@ -51,7 +60,8 @@ export function createScene(canvas) {
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
   function placeCamera() {
-    camera.position.set(view.tx, view.dist * Math.sin(PITCH), view.tz + view.dist * Math.cos(PITCH));
+    const h = view.dist * Math.cos(PITCH); // con yaw = 0, la cámara de siempre: al sur del punto mirado
+    camera.position.set(view.tx + h * Math.sin(view.yaw), view.dist * Math.sin(PITCH), view.tz + h * Math.cos(view.yaw));
     camera.lookAt(view.tx, 0, view.tz);
     camera.updateMatrixWorld();
   }
@@ -65,7 +75,7 @@ export function createScene(canvas) {
 
   function rebuildLot(s) {
     if (lot) world.remove(lot);
-    const shape = LOTS[s.lot]; // agujeros y columnas: ampliar no los mueve, así que valen los del local
+    const shape = lotOf(s.lot, s.lotSeed); // agujeros y columnas: ampliar no los mueve, así que valen los del local
     lot = buildLot(s.W, s.H, (x, y) => inRects(shape.holes, x, y), (x, y) => inRects(shape.pillars, x, y));
     world.add(lot);
     for (const m of machines) if (m) world.remove(m.root);
@@ -86,14 +96,24 @@ export function createScene(canvas) {
         m = machines[i] = c ? { key, root: buildMachine(c.kind, c.up) } : null;
         if (m) {
           m.root.position.set((i % s.W) + 0.5, 0, Math.floor(i / s.W) + 0.5);
-          if (m.root.userData.ui) m.root.userData.ui.rotation.x = -PITCH;
           world.add(m.root);
         }
       }
       if (!m) continue;
       m.root.userData.body.rotation.y = -c.dir * Math.PI / 2;
-      m.root.userData.update?.(c, t, playing);
+      m.root.userData.ui?.quaternion.copy(camera.quaternion); // la barra mira a la cámara desde cualquier lado (root no gira)
+      m.root.userData.update?.(c, t, playing, c.kind === 'bridge' ? bridgeFlow(s, i % s.W, Math.floor(i / s.W)) : undefined);
     }
+  }
+
+  /**
+   * Altura de un producto que viaja de (fx, fy) a (x, y) con avance p (0 a 1, de centro a centro). Sigue las rampas del
+   * puente: la rampa ocupa del borde de la celda (p = 0,5) a 0,25 del centro (p = 0,75 al entrar, 0,25 al salir).
+   */
+  function itemHeight(s, slot, it, x, y, p) {
+    const fromHigh = it.fx === x && it.fy !== y && s.cells[it.fy * s.W + it.fx]?.kind === 'bridge'; // sale del carril alto de un puente: viaja en vertical
+    if (slot === 'item2') return fromHigh ? SURFACE.bridge : ramp(SURFACE.belt, SURFACE.bridge, (p - 0.5) / 0.25);
+    return fromHigh ? ramp(SURFACE.bridge, SURFACE.belt, (p - 0.25) / 0.25) : SURFACE.belt;
   }
 
   function syncItems(s, t) {
@@ -109,12 +129,12 @@ export function createScene(canvas) {
       const c = s.cells[i];
       if (!c) continue;
       const x = i % s.W, y = Math.floor(i / s.W);
-      for (const slot of ['item', 'item2']) { // item2: el carril alto del puente, que sube mientras entra
+      for (const slot of ['item', 'item2']) { // item2: el carril alto del puente
         const it = c[slot];
         if (!it) continue;
         const p = smooth(THREE.MathUtils.clamp((t - it.t0) / BELT_TIME, 0, 1));
         const px = THREE.MathUtils.lerp(it.fx, x, p) + 0.5, pz = THREE.MathUtils.lerp(it.fy, y, p) + 0.5;
-        const py = slot === 'item2' ? THREE.MathUtils.lerp(SURFACE.belt, SURFACE.bridge, p) : SURFACE.belt;
+        const py = itemHeight(s, slot, it, x, y, p);
         show(it, px, py, pz);
         if (isStuck(s, x, y, slot)) {
           let a = alerts.children[alertN++];
@@ -154,10 +174,18 @@ export function createScene(canvas) {
       o.position.set(p.x, 0, p.z);
       o.rotation.y = p.heading;
       o.scale.setScalar(CROWD.size * THREE.MathUtils.clamp(Math.min(p.x - c.enterX, c.leaveX - p.x) / 0.8, 0, 1)); // asoma y se pierde en las puntas de la vereda
-      o.userData.update(p.mark, p.walking, t);
+      o.userData.update(p.mark, p.walking, t, !!p.bag);
       seen.add(p.key);
+      let b = flying.get(p.key);
+      if (p.grab && !b) { b = buildBag(); b.scale.setScalar(CROWD.size); flying.set(p.key, b); crowdLayer.add(b); }
+      if (!p.grab && b) { crowdLayer.remove(b); flying.delete(p.key); }
+      if (p.grab) { // en arco del mostrador del despacho que entregó a las manos del cliente
+        const { x, y, k } = p.grab, L = THREE.MathUtils.lerp;
+        b.position.set(L(x + 0.5, p.x, k), L(0.9, 0.15 * CROWD.size, k) + Math.sin(k * Math.PI) * 1.4, L(y + 0.5, p.z, k));
+      }
     }
     for (const [key, o] of people) if (!seen.has(key)) { crowdLayer.remove(o); people.delete(key); }
+    for (const [key, b] of flying) if (!seen.has(key)) { crowdLayer.remove(b); flying.delete(key); }
   }
 
   /**
@@ -171,10 +199,17 @@ export function createScene(canvas) {
       items.clear();
       for (const o of people.values()) crowdLayer.remove(o);
       people.clear();
+      for (const b of flying.values()) crowdLayer.remove(b);
+      flying.clear();
       crowd = newCrowd(); crowdT = t; // la partida nueva o recuperada arranca con cada cliente en su lugar
     }
-    const key = `${s.lot}:${s.W}x${s.H}`;
+    const key = `${s.lot}:${s.lotSeed}:${s.W}x${s.H}`;
     if (key !== lotKey) { lotKey = key; rebuildLot(s); }
+    if (spin) { spin.k = Math.min(1, spin.k + dt / TURN_TIME); applySpin(s); }
+    const fromNorth = Math.cos(view.yaw) < -0.3; // de este lado la pared alta del fondo tapa la cocina: queda el zócalo
+    for (const o of lot.userData.tall) o.visible = !fromNorth;
+    hint.visible = !!hintCell;
+    if (hintCell) hint.position.set(hintCell.x + 0.5, 1.9 + (reducedMotion.matches ? 0 : Math.sin(performance.now() / 1000 * 3) * 0.06), hintCell.y + 0.5);
     syncMachines(s, t, playing);
     syncItems(s, t);
     syncJams(s);
@@ -213,22 +248,81 @@ export function createScene(canvas) {
 
   /** Arrastrar: el punto del piso que estaba bajo el dedo sigue bajo el dedo. */
   function panPixels(s, fromX, fromY, toX, toY) {
+    settle(s);
     const a = groundAt(fromX, fromY), b = groundAt(toX, toY);
     if (!a || !b) return;
     view.tx += a.x - b.x; view.tz += a.z - b.z;
     clampView(s);
   }
-  function pan(s, dx, dz) { view.tx += dx; view.tz += dz; clampView(s); }
-  function zoom(s, factor) { view.dist *= factor; clampView(s); }
-  function lookAt(s, x, y) { view.tx = x + 0.5; view.tz = y + 0.5; clampView(s); }
+  // mover la vista termina un giro en curso y deja de estar encuadrada
+  function settle(s) { if (spin) { spin.k = 1; applySpin(s); } view.fitted = false; }
+  function pan(s, dx, dz) { settle(s); view.tx += dx; view.tz += dz; clampView(s); }
+  function zoom(s, factor) { settle(s); view.dist *= factor; clampView(s); }
+  function lookAt(s, x, y) { settle(s); view.tx = x + 0.5; view.tz = y + 0.5; clampView(s); }
+
+  /** Centro (px de pantalla) de la parte que el HUD deja libre. */
+  function safeCenter(inset) {
+    const r = canvas.getBoundingClientRect();
+    return [r.left + (inset.left + r.width - inset.right) / 2, r.top + (inset.top + r.height - inset.bottom) / 2];
+  }
+
+  /** Avanza el giro en curso hasta spin.k. Encuadrado: interpola centro y distancia; si no, sostiene el punto del piso bajo el centro libre. */
+  function applySpin(s) {
+    const { from, to } = spin, e = smooth(spin.k), L = THREE.MathUtils.lerp;
+    view.yaw = L(from.yaw, to.yaw, e);
+    if (spin.anchor) {
+      placeCamera();
+      const g = groundAt(spin.px, spin.py);
+      if (g) { view.tx += spin.anchor.x - g.x; view.tz += spin.anchor.z - g.z; }
+    } else { view.tx = L(from.tx, to.tx, e); view.tz = L(from.tz, to.tz, e); view.dist = L(from.dist, to.dist, e); }
+    if (spin.k >= 1) {
+      view.yaw = view.rot * QUARTER; // el mismo ángulo, sin las vueltas acumuladas
+      spin = null;
+      if (!view.fitted) { clampView(s); return; }
+    }
+    placeCamera();
+  }
+
+  /** Gira la vista un cuarto (q = 1 o -1) alrededor de lo que se está mirando. Devuelve el rot nuevo. */
+  function turn(s, inset, q) {
+    const from = { yaw: view.yaw, tx: view.tx, tz: view.tz, dist: view.dist }; // con un giro en curso, desde lo dibujado
+    view.rot = (view.rot + q + 4) % 4;
+    const d = view.rot * QUARTER - from.yaw, toYaw = from.yaw + Math.atan2(Math.sin(d), Math.cos(d)); // por el camino corto
+    frame(s, inset); // el encuadre del ángulo nuevo: fitDist (el tope de alejar) depende de él
+    spin = { from, to: { yaw: toYaw, tx: view.tx, tz: view.tz, dist: view.dist }, k: 0 };
+    Object.assign(view, from);
+    placeCamera();
+    if (!view.fitted) { // sin encuadre: misma distancia, y el punto bajo el centro libre se queda ahí
+      [spin.px, spin.py] = safeCenter(inset);
+      spin.anchor = groundAt(spin.px, spin.py);
+      if (!spin.anchor) Object.assign(spin.to, { tx: from.tx, tz: from.tz, dist: from.dist }); // mirando al cielo: gira sobre el centro
+    }
+    if (reducedMotion.matches) spin.k = 1;
+    if (reducedMotion.matches || !spin.anchor) applySpin(s);
+    return view.rot;
+  }
+
+  function setTurn(rot) { spin = null; view.rot = rot; view.yaw = rot * QUARTER; placeCamera(); }
+  const viewTurn = () => view.rot;
 
   /** Encuadra el terreno entero dentro de la parte de la pantalla que el HUD deja libre. */
   function fit(s, inset) {
+    spin = null;
+    frame(s, inset);
+    view.fitted = true;
+  }
+
+  /** El encuadre para el ángulo de destino (rot): deja en view centro, distancia y fitDist. */
+  function frame(s, inset) {
     resize();
+    view.yaw = view.rot * QUARTER;
     const r = canvas.getBoundingClientRect();
     const safe = { l: inset.left, t: inset.top, r: r.width - inset.right, b: r.height - inset.bottom };
     const c = curb(s); // el frente es el cordón de la vereda, y por encima de la fila entran las marcas de los clientes
-    const corners = [[0, 0, -0.3], [s.W, 0, -0.3], [0, 2, -0.3], [s.W, 2, -0.3], [-0.5, 0, c.z1], [s.W + 0.5, 0, c.z1], [c.headX, 1.4 * CROWD.size, c.z]];
+    // la caja de todo lo que tiene que entrar, vista desde cualquiera de los cuatro lados: el fondo con su pared, la
+    // vereda hasta el cordón y las marcas de la fila, de punta a punta
+    const corners = [[0, 0, -0.3], [s.W, 0, -0.3], [0, 2, -0.3], [s.W, 2, -0.3], [-0.5, 0, c.z1], [s.W + 0.5, 0, c.z1],
+      [c.headX, 1.4 * CROWD.size, c.z], [0, 1.4 * CROWD.size, c.z], [s.W, 1.4 * CROWD.size, c.z]];
     const bounds = () => {
       const b = { l: Infinity, t: Infinity, r: -Infinity, b: -Infinity };
       for (const [x, y, z] of corners) {
@@ -314,6 +408,9 @@ export function createScene(canvas) {
   const shownJams = () => jams.children.filter(m => m.visible).map(m => ({ x: Math.floor(m.position.x), y: Math.floor(m.position.z) }));
   const setJams = on => { jamsOn = on; };
   /** Para las pruebas: los clientes dibujados. queued: está en la fila (key es el número de su pedido); settled: llegó a su lugar. */
-  const shownCustomers = () => crowdShown.map(p => ({ key: p.key, queued: p.queued, mark: p.mark, x: p.x, z: p.z, settled: p.x === p.tx && p.z === p.tz }));
-  return { render, pick, project, pan, panPixels, zoom, lookAt, fit, resize, setSelected, setHover, thumbnails, shownItems, shownJams, setJams, shownCustomers };
+  const shownCustomers = () => crowdShown.map(p => ({ key: p.key, queued: p.queued, mark: p.mark, x: p.x, z: p.z, settled: p.x === p.tx && p.z === p.tz, bag: !!p.bag, grab: !!p.grab }));
+  /** Marca dorada de «se puede mejorar» sobre una celda ({ x, y }) o ninguna (null). */
+  const setHint = cell => { hintCell = cell ? { x: cell.x, y: cell.y } : null; };
+  const shownHint = () => hintCell && { ...hintCell };
+  return { render, pick, project, pan, panPixels, zoom, lookAt, fit, turn, setTurn, viewTurn, resize, setSelected, setHover, thumbnails, shownItems, shownJams, setJams, shownCustomers, setHint, shownHint };
 }

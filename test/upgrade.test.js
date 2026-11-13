@@ -126,3 +126,36 @@ test('diagnóstico: la doble hornalla con las dos carnes listas y sin lugar cuen
   assert.deepEqual([g.cooked, g.cooking], [CAP.grillCooked, [0, 0]]);
   assert.ok(sim.diagShares(g).blocked > 0.5, `bloqueada ${sim.diagShares(g).blocked.toFixed(2)}`);
 });
+
+// upgradeHint lee el diagnóstico: acá se escribe a mano para fijar quién trabaja cuánto.
+function busy(mode, x, y, work, rest = 100 - work) {
+  const s = sim.newGame(mode, 1);
+  for (const c of s.cells) if (c) c.diag = { work: 0, blocked: 0, wait: 0, idle: 100 };
+  sim.at(s, x, y).diag = { work, blocked: 0, wait: 0, idle: rest };
+  return s;
+}
+
+test('indicador de mejora: la parrilla que no da abasto se señala si la plata alcanza, y si no, no', () => {
+  const s = busy('career', 3, 1, 90);
+  s.money = UPGRADES.grill.cost;
+  assert.deepEqual(sim.upgradeHint(s), { x: 3, y: 1, kind: 'grill' });
+  s.money = UPGRADES.grill.cost - 1;
+  assert.equal(sim.upgradeHint(s), null, 'sin plata no se sugiere');
+  s.money = 1e6;
+  sim.upgrade(s, 3, 1);
+  assert.equal(sim.upgradeHint(s), null, 'ya mejorada');
+});
+
+test('indicador de mejora: nada si el cuello no tiene mejora o si la cocina está tranquila; en Modo libre no hace falta plata', () => {
+  const src = busy('career', 1, 1, 95);
+  src.money = 1e6;
+  assert.equal(sim.bottleneck(src).kind, 'raw');
+  assert.equal(sim.upgradeHint(src), null, 'una fuente no se mejora');
+  const calm = busy('career', 3, 1, 70);
+  calm.money = 1e6;
+  assert.equal(sim.bottleneck(calm).kind, 'grill');
+  assert.equal(sim.upgradeHint(calm), null, 'con trabajo bajo DIAG.busy no se sugiere');
+  const free = busy('sandbox', 4, 1, 90);
+  assert.equal(free.money, 0);
+  assert.deepEqual(sim.upgradeHint(free), { x: 4, y: 1, kind: 'grill' });
+});

@@ -27,7 +27,8 @@ fuera de la ventana (caja pintada), tamaños de letra contra los seis de la fich
 toque mínimo, nombre de cada control, clases sin regla, textos sin resolver, bloques de prosa, y que
 cada herramienta tenga su miniatura; además juega con clics y toques de verdad (construir, ampliar,
 perder, elegir local cerrado y abierto y jugar cada local nuevo, guardar, recargar y continuar, cambiar de partida). `node tools/mutate.mjs`: rompe el código
-de a una cosa y exige que `npm test` se ponga rojo.
+de a una cosa y exige que `npm test` se ponga rojo. `node tools/mutate.mjs --check` sólo comprueba que el texto de cada
+mutación siga apareciendo una vez en su archivo (tarda un segundo y no corre ninguna prueba).
 
 **Componentes.** `box`/`cyl`/`stack`/`progressBar`/`outArrow` en `src/models.js` para armar modelos;
 `buildMachine(kind)`, `buildItem(item)`, `burger(receta)`. En el HUD (`src/hud.js`): `stat`, `btn`,
@@ -45,16 +46,31 @@ cabeza de la fila, entrada y salida), `newCrowd()`, `stepCrowd(crowd, pedidos, e
 Mejoras en `src/sim.js`: `upgrade(s, x, y)` (mismo contrato que `place`: `ok` o `reason` `'out' | 'none' | 'done' | 'money'`),
 `upgradeCost(s, kind)`, `refund(s, celda)` (la mitad de máquina más mejora: el único lugar que calcula un reembolso), y los
 valores de la celda `burners(c)`, `stockCap(c)`, `assembleTime(c)`. `buildMachine(kind, up)` arma el modelo mejorado.
+Indicador de mejora: `upgradeHint(s)` en `sim.js` (`{ x, y, kind }` o null: el cuello de botella cuando trabaja desde
+`DIAG.busy`, tiene mejora sin comprar y la plata alcanza); en la escena, `setHint(celda)` y `shownHint()` (para el arnés).
+Puente: `bridgeFlow(s, x, y)` en `sim.js` (`[esteOeste, norteSur]`, la dirección en que corre cada carril o null si nada entra).
+Locales: `lotOf(clave, semilla)` en `sim.js` es la única puerta a un local de Carrera como datos (el de `LOTS`, o el generado).
+Vista: `scene.turn(s, inset, q)` (gira un cuarto, devuelve `rot`), `setTurn(rot)`, `viewTurn()`; `ui.rot` en `main.js`.
+Dirección de pantalla = `(dirección del mundo + rot) % 4`.
+Deshacer en `sim.js`: `undoMark(s)` (abre un grupo: lo que se construye hasta el próximo se deshace junto), `undo(s)`
+(`{ ok, n }` o `reason` `'none' | 'late' | 'money'`), `canUndo(s)`; `s.undo` es una lista de grupos de acciones
+`{ x, y, t, prev, money, keep }`. Filtro: `setPick(s, x, y, tipo)` (`ok` o `reason` `'out' | 'fixed' | 'same'`), `PICKS` en
+`data.js`, `exits(c, d, tipo)`. Grupos: `GROUP` en `data.js`, pedido con `group`, evento `tip` con `{ x, y, amount }`.
 Desafíos en `src/sim.js`: `puzzleStars(s)` (`{ won, spent, belts, spendOk, beltsOk, stars }`), `puzzleOpen(clave, estrellas)`;
 en el HUD, `stars(n, total)` (estrellas llenas y huecas en SVG) y `showPuzzleEnd(s, siguiente)`.
 
 **Idiomas.** Español (origen, voseo, sin exclamaciones) e inglés. Mecanismo: `STRINGS` y `t()` en
 `src/i18n.js`; `t()` tira error si la clave no existe y la prueba compara idiomas.
 
-**Arnés.** `npm run check` = `npm test` (1 s) → `npm run build` (1 s) → `npm run shots` (unos 9 min:
-6 corridas, 72 capturas en `shots/`, entre ellas la capa de atascos prendida con un clic, el divisor y el puente puestos con clics,
-el inspector de la parrilla sin plata para mejorarla y ya mejorada, y el primer desafío resuelto con clics hasta su hoja de cierre, WebGL por software; el
-recorrido comprueba tres veces que la fila de la vereda es la cola de pedidos, en orden, en su lugar y sin panel encima). `npm run shots -- phone-es` corre una sola.
+**Arnés.** Lo que se corre antes de subir: `node --test --test-concurrency=1` (134 pruebas, medio minuto), `npm run build`
+(1 s, y falla si un módulo importa un nombre que no existe) y `node tools/mutate.mjs --check`. `npm run shots` NO se corre
+más en la máquina del dueño: dos corridas en paralelo con WebGL por software la reiniciaron (2026-11-12), y las capturas no
+se vuelven a tomar. Lo que el arnés medía en pantalla lo mira el dueño jugando, después de publicar. `tools/shots.mjs`
+queda en el repositorio como estaba: su última corrida completa, antes de la ronda de testers, midió 120 pantallas; los
+pasos que sumó esa ronda (vista girada, deshacer, filtro, La sorpresa y su enlace, barra del teléfono) están escritos y
+nunca corrieron. Quien lo corra en otra máquina, que espere fallas del propio arnés. Sus capturas iban a `shots/`, entre ellas la capa de atascos prendida con un clic, el divisor y el puente puestos con clics,
+el inspector de la parrilla sin plata para mejorarla y ya mejorada, y el primer desafío resuelto con clics hasta su hoja de cierre. Corre con WebGL por software. El
+recorrido comprueba tres veces que la fila de la vereda es la cola de pedidos, en orden, en su lugar y sin panel encima. `npm run shots -- phone-es` corre una sola.
 
 **Inscripciones.** Una máquina nueva se anota en: `KINDS` y `BUILD_ORDER` (`data.js`); `accepts`,
 `receive`, `process` u `output` (`sim.js`); su caso en `cellState` (`sim.js`: cuándo trabaja, está
@@ -64,8 +80,13 @@ Si lleva productos de paso (como cinta, divisor y puente): `carries: true` en `K
 proporciones del inspector, la mueve en `step` y la cuenta como lo que viaja), su caso en `exits` y en `receive` (`sim.js`),
 y el arrastre de cinta en `main.js` pasa por encima sin reemplazarla. Si girarla no cambia nada, `noTurn: true` (queda en
 dirección 0, el inspector no ofrece Girar). Una fuente a demanda nueva se regula con `sourceNeed`.
-La barra de herramientas sale de `BUILD_ORDER`: con catorce piezas entra en 1024 px porque en notebook cada herramienta
-toma el ancho de su nombre (`style.css`); en teléfono se desplaza. En notebook los botones de la barra de arriba van sólo
+Si la pieza elige por tipo de producto (como el filtro), todo recorrido de celdas de paso le pasa el tipo a `exits` cuando
+lo conoce (`carry`, `arrives`, `reach`, `isStuck`, el reparto). Toda acción nueva que construye anota su deshacer (`note`
+en `sim.js`) y quien la dispara en `main.js` llama antes a `sim.undoMark`.
+La barra de herramientas sale de `BUILD_ORDER` y con el filtro son quince botones. En notebook cada herramienta toma el
+ancho de su nombre (`style.css`). En teléfono parado es una grilla de 7 por 2 sin desplazamiento, y «Ampliar» sale de la
+grilla a la barra de arriba, dentro de «más»; en apaisado, grilla de 3 por 5. Una pieza más ya no entra en ninguna de las
+dos grillas: antes de sumarla hay que decidir qué sale o cómo se agrupa. En notebook los botones de la barra de arriba van sólo
 con ícono (el nombre queda en `title` y `aria-label`) para que entre en un renglón.
 Una forma nueva de que un pedido deje la cola: su evento con `id` y su motivo de salida en `stepCrowd` (`crowd.js`);
 sin evento, el cliente desaparece en el acto. Una forma nueva de local: su frente en `curb` (`crowd.js`).
@@ -77,6 +98,10 @@ Una receta: `RECIPES`, `SANDBOX_DEADLINE` y `recipe_`. Un ingrediente: `INGREDIE
 Un local nuevo se anota en: `LOTS` (tamaño, `holes`, `pillars`, `kitchen`, `fixed`, `grow`, `unlock`) y, si es de
 Carrera, `CAREER_LOTS` (`data.js`); `lot_` en los dos idiomas; su prueba de primera entrega sale sola de `CAREER_LOTS`
 en `test/lots.test.js`. Los agujeros van arriba o a la izquierda (ampliar suma piso a la derecha y abajo).
+Un local generado lleva `gen: true` en `LOTS` y sale de `generateLot(semilla)` (`sim.js`, rangos en `LOTGEN`); nadie fuera
+de `sim.js` lee `LOTS[clave]` de un local de Carrera: pasa por `lotOf`.
+Lo que depende de hacia dónde mira la cámara (flecha de Girar, leyenda de la herramienta, flechas del teclado, WASD) pasa
+por `ui.rot`; lo que trabaja en celdas (arrastre de cinta, fantasma) no.
 Un desafío nuevo se anota en: su local en `LOTS` con la misma clave (prefijo `pz`), su fila en `PUZZLES` (`budget`, `orders`
 como `[segundo, receta]`, `limit`, `spend`, `belts`; el orden de la tabla es el del inicio), `puzzle_` en los dos idiomas, y
 su solución en `SOLUTIONS` de `test/puzzles.test.js`: la prueba la juega y exige tres estrellas, y exige que sin hacer nada
@@ -123,12 +148,22 @@ y se lee en el HUD (`hud.js`) o en la escena (`scene.js`). Lo que no es del jueg
 - En un desafío con la cola llena, esperar a que haya lugar corría el plazo del pedido y una cocina a media velocidad ganaba
   el desafío del divisor. El cliente que encuentra la cola llena pierde el desafío.
 - `hidden` no esconde un panel con `display: flex` propio: hace falta `[hidden] { display: none; }` (pasó con «Pedir»).
+- La niebla de la escena tenía distancias fijas (60 a 140) y el encuadre no: en teléfono parado o con el local ampliado la
+  cámara quedaba más lejos que la niebla y todo se veía oscuro. Lo que depende de la distancia de la cámara se mira en la
+  pantalla más angosta y con el local más grande.
+- Un comando encadenado con `&&` corrió el mutador entero cuando el paso anterior había fallado a medias, y el tope de
+  tiempo lo cortó con `src/sim.js` mutado. El mutador se corre solo, nunca al final de una cadena, y después de un corte
+  se mira `git diff` de los archivos que muta.
+- Dos corridas del arnés de capturas lanzadas a la vez (dos Chrome con WebGL por software) reiniciaron la PC del dueño.
+  Una verificación que puede tumbar la máquina de quien la presta no se corre: se reemplaza por pruebas, armado y lectura.
+- Una expresión regular escrita por un agente perdió su barra invertida (`\d` quedó `d`) y `#sala=` no leía ningún número;
+  `node --check` no lo ve. Lo que lee una URL lleva su comprobación en el arnés con una URL de verdad.
 - En la hoja de cierre, dos oraciones nuevas van en un solo párrafo: el arnés cuenta bloques de prosa. Un renglón de datos (proporciones del inspector) va como `.stat`, no como párrafo.
 
 **Entrega.** `npm run build` deja el juego en `dist/`, con rutas relativas: se sirve desde cualquier
 carpeta. Las capturas quedan en `shots/`. El repositorio está en GitHub (`origin`). `.github/workflows/deploy.yml`
-publica `dist/` en GitHub Pages con cada push a `main`, después de correr `npm test`; la corrida del
-navegador (`npm run shots`) no corre ahí: se corre a mano antes de subir.
+publica `dist/` en GitHub Pages con cada push a `main`, después de correr `npm test`. Nadie ve el juego dibujado antes
+de publicar: la prueba en pantalla es el QA del dueño sobre lo publicado, y lo que encuentra entra en la ronda siguiente.
 
 **Decidido.**
 - three.js y no Flutter: Flutter no tiene un 3D maduro para sombras, materiales y cámara; el prototipo ya era web.
@@ -159,8 +194,8 @@ navegador (`npm run shots`) no corre ahí: se corre a mano antes de subir.
 - La capa de atascos es vista (`ui.jams`, no se guarda): rombo ámbar con dos barras sobre cada celda con
   bloqueo desde `DIAG.jam`. El botón va en la barra de arriba como secundario (en compacta, dentro de «más»).
 - `stats.expired` cuenta sólo plazos vencidos y `stats.turnedAway` la cola llena; «Perdidos» muestra `lost(s)`.
-- Clientes visibles: una persona por pedido en la vereda del frente (`curb`), en orden de llegada con la cabeza a la
-  derecha; llegan por la izquierda, al cobrar salen por la derecha, al vencer vuelven por la izquierda con el estallido
+- Clientes visibles: una persona por pedido en la vereda del frente (`curb`), en orden de llegada con la cabeza hacia la
+  derecha; llegan por la izquierda, al cobrar reciben su bolsa y salen por la derecha, al vencer vuelven por la izquierda con el estallido
   de enojo; con la cola llena uno llega por el carril de afuera, mira y se vuelve enojado. Marcas: círculo verde con
   tilde (a tiempo), triángulo ámbar con «!» (por vencer), cuadrado rojo con reloj (vencido), estallido (enojo). Caminan en
   tiempo de juego (en pausa quietos, con 6× a 6×). Con movimiento reducido o al cambiar de partida, cada uno en su lugar
@@ -179,7 +214,49 @@ navegador (`npm run shots`) no corre ahí: se corre a mano antes de subir.
   frente, costado derecho y costado izquierdo; una salida que no recibe ese producto o está llena se saltea y el turno
   sigue a la que lo recibió. Sin ninguna salida posible se marca sin salida como una cinta.
 - Puente (`bridge`, $60): carril este-oeste en `item` (bajo) y norte-sur en `item2` (alto); cada producto guarda en `d` hacia
-  dónde viaja y sale por el lado opuesto. No gira: queda en dirección 0.
+  dónde viaja y sale por el lado opuesto. No gira: queda en dirección 0. A la vista: el carril bajo pasa como una cinta por
+  el arco de dos vigas de acero, y el alto es una pasarela con rampas; cada carril lleva la goma de flechas corriendo en su
+  sentido real (`bridgeFlow`) o goma lisa si nada entra por él, y el producto sube y baja por las rampas.
+- Sin registro de actividad: los testers no le vieron uso y ocupaba pantalla. Se borró del estado, del HUD y de las frases;
+  lo que pasa se sigue anunciando en `state.events` (avisos, flotantes, fila de clientes).
+- Girar la vista: en cuartos, con el botón de la barra de arriba (siempre visible, también en compacta) o con Q y E, con
+  una animación corta (sin ella con movimiento reducido). Gira alrededor de lo que se está mirando; si la vista estaba
+  encuadrada, vuelve a encuadrar. Desde el norte la pared alta del fondo se esconde y queda su zócalo. Cada partida
+  empieza con la vista de siempre. La vista no se guarda.
+- Sin niebla en la escena: con distancia fija oscurecía todo al alejar (local ampliado, teléfono parado).
+- Indicador de mejora: marca dorada con flecha sobre la máquina de `upgradeHint`, y un aviso la primera vez por tipo de
+  máquina en cada partida. No cambia la herramienta: quien la toca con Inspeccionar llega a «Mejorar».
+- La bolsa: el cliente que cobró espera `CROWD.grab` en su lugar mirando a la cocina mientras una bolsa viaja en arco desde
+  el despacho que entregó, y se va con ella en la mano. El enojado y el de la cola llena no llevan bolsa.
+- Barra de herramientas en compacta: grilla sin desplazamiento (7 columnas en teléfono parado, 3 en apaisado), cada botón
+  con su dibujo y sin nombre; el nombre, el precio y hacia dónde va a apuntar la pieza van en un renglón de leyenda arriba.
+- La sorpresa (`random`): local de Carrera generado con semilla (tamaño, una muesca o ninguna, columnas sueltas y la línea
+  de El clásico trasladada y a veces espejada; ninguna columna toca la cocina inicial). La semilla de la sala es también la
+  de los pedidos: misma sala, mismos clientes. Va en la URL (`#sala=<número>`), con «Otra sala» y «Copiar enlace» en el
+  inicio. El récord es por local, sin distinguir semilla. Está abierta desde el principio y fuera de la cadena de
+  locales: un enlace compartido no puede recibir a nadie con un candado.
+- Deshacer: revierte el último gesto de construcción (pieza nueva, reemplazo, giro, borrado, mejora; un arrastre entero
+  es un gesto) y devuelve la plata exacta, no la mitad. Vale `UNDO.window` segundos de juego desde la acción: sin ese
+  plazo, usar una máquina un rato y deshacerla sería un alquiler gratis. En pausa el plazo no corre. La máquina que vuelve
+  viene vacía; lo que la acción había perdido no se recupera. Ampliar no se deshace. El botón «Deshacer» aparece arriba,
+  junto al cartel de pausa, sólo mientras hay algo que deshacer; también Z y Ctrl+Z.
+- Filtro (`filter`, $45): recibe sólo por atrás y lleva un producto como una cinta. El ingrediente elegido (`pick`, uno
+  de `PICKS`) sale por los costados por turnos y nunca por el frente; todo lo demás sale por el frente y nunca por un
+  costado. Se elige desde el inspector («Cambiar ingrediente»), gratis y sin perder el contenido. A la vista: la base del
+  divisor más un cartel en la esquina de atrás con el ingrediente en miniatura.
+- Grupos: en Carrera, desde el nivel `GROUP.level`, una llegada de cada cuatro (`GROUP.chance`) trae dos clientes juntos,
+  si hay lugar para los dos. Son dos pedidos comunes con su plazo; si los dos salen a tiempo dejan `GROUP.tip` de
+  propina. Después de un grupo se saltea la llegada siguiente: el ritmo promedio no cambia, cambia que hay tandas. Bajo
+  el nivel no se tira ese azar, así las partidas de nivel 1 y 2 son las mismas de antes para la misma semilla. Nació de
+  «pedidos de a varios»: se descartó el pedido de varias hamburguesas que debían salir juntas, por difícil de coincidir.
+- Marca a batir: el enlace de una sala puede llevar `&nivel=<n>`. El inicio dice «Te desafían a pasar el nivel n» y la
+  hoja de cierre dice si se pasó; desde esa hoja se copia el enlace con la marca propia. Sin servidor: la marca viaja en
+  el enlace y nadie la comprueba.
+- Descartada una segunda familia de producto (freidora por tandas): no le gustó al dueño del juego.
+- Diez desafíos. Los cuatro de la segunda tanda combinan piezas ya enseñadas: El cruce (un solo puente alcanza si pan y
+  queso viajan juntos), El rodeo (despacho rodeado de columnas), El cuello (mejorar la armadora, no la parrilla) y El
+  examen (una parrilla nueva sale más barata que la mejora). El almacén no tiene desafío: con el motor actual una cinta
+  en su lugar gana igual, porque la armadora ya junta ocho carnes.
 - Arrastre: la cinta pasa por encima de divisores y puentes (así se dibuja la segunda línea a través del puente), también
   cuando el arrastre empieza encima de uno; un toque sí los reemplaza, y se decide al soltar. Divisor y puente se ponen de a uno, con la dirección de `R`.
 - Mejoras (`UPGRADES`): parrilla de doble hornalla ($140, dos carnes a la vez), armadora con segundo brazo ($180, 2,5 s),

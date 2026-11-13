@@ -19,6 +19,7 @@ export const TIMES = { cook: 5, assemble: 4, grillOut: 0.42, stockOut: 0.52, ass
 export const KINDS = {
   belt:     { cost: 2, carries: true },
   splitter: { cost: 35, carries: true },
+  filter:   { cost: 45, carries: true },
   bridge:   { cost: 60, carries: true, noTurn: true },
   raw:      { cost: 30, emits: 'raw', every: 2.1 },
   bun:      { cost: 25, emits: 'bun', every: 2.0, onDemand: true },
@@ -35,9 +36,19 @@ export const UPGRADES = {
   assembly: { cost: 180, assemble: 2.5 },
   stock:    { cost: 60, stock: 16 },
 };
-export const BUILD_ORDER =['belt', 'splitter', 'bridge', 'raw', 'bun', 'cheese', 'grill', 'stock', 'assembly', 'dispatch'];
+export const BUILD_ORDER =['belt', 'splitter', 'filter', 'bridge', 'raw', 'bun', 'cheese', 'grill', 'stock', 'assembly', 'dispatch'];
 
 // Qué fuente hace falta para cada ingrediente de una receta.
+// Lo que un filtro puede elegir, en el orden en que se cambia (el primero es el de una pieza nueva).
+export const PICKS = ['raw', 'patty', 'bun', 'cheese', 'burger'];
+
+// Deshacer: window, segundos de juego en que una acción se puede deshacer (sin ella, deshacer sería alquilar gratis) ·
+// max, cuántas acciones se recuerdan.
+export const UNDO = { window: 10, max: 30 };
+
+// Grupos: desde level, con chance, llegan dos clientes juntos; tip, la propina si los dos salen a tiempo. Sólo en Carrera.
+export const GROUP = { level: 3, chance: 0.25, tip: 8 };
+
 export const SOURCE_OF = { bun: 'bun', patty: 'raw', cheese: 'cheese' };
 export const INGREDIENTS = ['bun', 'patty', 'cheese'];
 
@@ -53,8 +64,9 @@ export const SANDBOX_INTERVAL = 17;
 
 // Diagnóstico de cuello de botella. tau: segundos en que el acumulado de cada celda decae a 1/e (pesa más
 // el último minuto) · tie: diferencia de trabajo que se toma como empate · minWork: con menos trabajo que
-// esto no hay cuello de botella · jam: proporción bloqueada desde la que la capa de atascos marca la celda.
-export const DIAG = { tau: 60, tie: 0.02, minWork: 0.05, jam: 0.5 };
+// esto no hay cuello de botella · jam: proporción bloqueada desde la que la capa de atascos marca la celda ·
+// busy: proporción de trabajo desde la que una máquina no da abasto (se sugiere su mejora).
+export const DIAG = { tau: 60, tie: 0.02, minWork: 0.05, jam: 0.5, busy: 0.75 };
 
 export const START_MONEY = 100;
 export const orderInterval = level => Math.max(3.5, 13 - 2.5 * (level - 1)); // segundos entre clientes
@@ -93,6 +105,9 @@ export const LOTS = {
   island: { ...LOT.career, fixed: [[6, 3]], unlock: ['columns', 4], kitchen: [ // el despacho fijo en el medio
     ['raw', 0, 1], ['belt', 1, 1], ['grill', 2, 1], ['belt', 3, 1], ['stock', 4, 1], ['belt', 5, 1, 1, 5, 2],
     ['bun', 0, 3], ['belt', 1, 3, 0, 4, 3], ['assembly', 5, 3], ['dispatch', 6, 3]] },
+  // La sorpresa: forma, columnas y lugar de la cocina salen de la semilla de la partida (lotOf en sim.js, rangos en LOTGEN).
+  // Abierta desde el principio: se comparte por enlace, y un enlace no puede recibir a nadie con un candado.
+  random: { gen: true },
   sandbox: { ...LOT.sandbox, kitchen: [ // la cocina del prototipo, celda por celda
     ['raw', 1, 1], ['belt', 2, 1, 0, 3, 1], ['grill', 4, 1], ['belt', 5, 1, 0, 6, 1], ['stock', 7, 1], ['belt', 8, 1, 0, 9, 1], ['belt', 10, 1, 1, 10, 4],
     ['bun', 1, 5], ['belt', 2, 5, 0, 9, 5], ['assembly', 10, 5], ['belt', 11, 5, 0, 13, 5], ['dispatch', 14, 5],
@@ -112,8 +127,18 @@ export const LOTS = {
     ['raw', 1, 2], ['belt', 2, 2], ['grill', 3, 2], ['belt', 4, 2, 0, 5, 2], ['assembly', 6, 2], ['belt', 7, 2, 0, 8, 2], ['dispatch', 9, 2],
     ['bun', 6, 0, 1], ['belt', 6, 1, 1], ['cheese', 6, 3, 3]] },
   pzHall: { w: 14, h: 3, pillars: [[6, 1, 6, 1]], kitchen: [['raw', 0, 0], ['bun', 0, 2], ['dispatch', 13, 1]] },
+  pzCross: { w: 7, h: 5, kitchen: [ // la carne baja por x = 3 con dos huecos; pan y queso juntos cruzan por uno solo
+    ['raw', 3, 0, 1], ['belt', 3, 2, 1], ['grill', 3, 4], ['belt', 4, 4], ['assembly', 5, 4], ['dispatch', 6, 4], ['bun', 0, 1], ['cheese', 0, 3]] },
+  pzIsland: { w: 9, h: 7, pillars: [[3, 2, 5, 2], [3, 3, 3, 4], [4, 4, 5, 4]], kitchen: [ // el despacho rodeado, abierto al este
+    ['raw', 0, 0], ['bun', 0, 6], ['dispatch', 4, 3]] },
+  pzNeck: { w: 7, h: 4, pillars: [[2, 2, 2, 2], [4, 3, 6, 3]], kitchen: [ // dos parrillas ya alcanzan: la que no da abasto es la armadora
+    ['raw', 0, 2], ['splitter', 1, 2], ['grill', 1, 1], ['grill', 1, 3], ['assembly', 4, 2], ['dispatch', 6, 2], ['bun', 4, 0, 1], ['belt', 4, 1, 1]] },
+  pzFinal: { w: 5, h: 7, kitchen: [ // El cruce de costado, con dobles: una segunda parrilla que entra a la línea vale menos que la mejora
+    ['raw', 0, 3], ['belt', 2, 3], ['grill', 4, 3, 1], ['belt', 4, 4, 1], ['assembly', 4, 5, 1], ['dispatch', 4, 6], ['bun', 1, 0, 1], ['cheese', 3, 0, 1]] },
 };
-export const CAREER_LOTS = ['classic', 'hall', 'corner', 'columns', 'island']; // el orden del inicio
+export const CAREER_LOTS = ['classic', 'hall', 'corner', 'columns', 'island', 'random']; // el orden del inicio
+// Sala generada (rangos inclusivos): ancho, alto, cantidad de columnas sueltas · tries: intentos de ubicar la cocina antes de descartar el agujero.
+export const LOTGEN = { w: [11, 14], h: [7, 9], pillars: [2, 5], tries: 40 };
 
 // Desafíos: cada uno juega en el local de su misma clave (LOTS), en este orden; uno se abre al ganar el anterior.
 //   budget  dinero para construir (las entregas no suman; borrar devuelve todo)
@@ -130,5 +155,9 @@ export const PUZZLES = {
   pzBridge: { budget: 70, orders: every(3, 12, 'classic'), limit: 100, spend: 64, belts: 7 },
   pzBudget: { budget: 150, orders: every(9, 3, 'double'), limit: 150, spend: 140, belts: 6 },
   pzHall:   { budget: 200, orders: every(4, 10, 'classic'), limit: 100, spend: 180, belts: 14 },
+  pzCross:  { budget: 90, orders: every(5, 8, 'cheese'), limit: 60, spend: 74, belts: 9 },
+  pzIsland: { budget: 200, orders: every(6, 8, 'classic'), limit: 70, spend: 182, belts: 16 },
+  pzNeck:   { budget: 200, orders: every(18, 2.8, 'classic'), limit: 70, spend: 192, belts: 7 },
+  pzFinal:  { budget: 220, orders: Array.from({ length: 14 }, (_, i) => [i * 3, i % 2 ? 'cheese' : 'double']), limit: 85, spend: 164, belts: 9 },
 };
 export const PUZZLE_ORDER = Object.keys(PUZZLES);
